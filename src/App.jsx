@@ -1,49 +1,27 @@
-import { useState } from "react";
-import { items } from "./data/items";
-import ItemGrid from "./components/ItemGrid";
-import Tray from "./components/Tray";
+import AppControls from "./components/AppControls";
+import CustomerView from "./components/CustomerView";
+import EmployeeView from "./components/EmployeeView";
+import ManagerView from "./components/ManagerView";
+import { RegisterProvider, useRegisterStore } from "./context/RegisterContext";
 
-function App() {
-  const [tray, setTray] = useState([]);
-
-  const addItem = (item) => {
-    const existing = tray.find((t) => t.id === item.id);
-
-    if (existing) {
-      setTray(
-        tray.map((t) => (t.id === item.id ? { ...t, qty: t.qty + 1 } : t)),
-      );
-    } else {
-      setTray([...tray, { ...item, qty: 1 }]);
-    }
-  };
-
-  const decreaseItem = (id) => {
-    setTray(
-      tray
-        .map((t) => (t.id === id ? { ...t, qty: t.qty - 1 } : t))
-        .filter((t) => t.qty > 0),
-    );
-  };
-
-  const removeItem = (id) => {
-    setTray(tray.filter((t) => t.id !== id));
-  };
+function AppShell() {
+  const { state } = useRegisterStore();
 
   return (
     <div style={{ padding: 20 }}>
-      <div style={{ display: "flex", gap: 40 }}>
-        <ItemGrid items={items} onAdd={addItem} />
-
-        <Tray
-          tray={tray}
-          onAdd={addItem}
-          onDecrease={decreaseItem}
-          onRemove={removeItem}
-        />
-      </div>
+      <h1>Register</h1>
+      <AppControls />
+      {state.view === "manager" && <ManagerView />}
+      {state.view === "employee" && <EmployeeView />}
+      {state.view === "customer" && <CustomerView />}
     </div>
   );
 }
 
-export default App;
+export default function App() {
+  return (
+    <RegisterProvider>
+      <AppShell />
+    </RegisterProvider>
+  );
+}
