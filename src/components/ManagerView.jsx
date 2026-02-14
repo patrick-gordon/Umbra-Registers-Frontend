@@ -322,6 +322,88 @@ function DiscountsSection({
   );
 }
 
+function InteractionPrototypeSection({ businessInteractions, onOpenInteractionAsRole }) {
+  return (
+    <>
+      <h2 style={{ marginTop: 28 }}>Business Interaction Prototype</h2>
+      <p>
+        Use these sample polyzones/props to simulate manager, employee, and customer
+        interaction entry points.
+      </p>
+      {businessInteractions.map((business) => (
+        <div
+          key={business.businessId}
+          style={{
+            border: "1px solid var(--umbra-border)",
+            padding: 12,
+            marginBottom: 12,
+            borderRadius: 8,
+          }}
+        >
+          <h3 style={{ marginBottom: 8 }}>{business.label}</h3>
+          {business.interactionPoints.map((point) => (
+            <div
+              key={point.id}
+              style={{
+                display: "grid",
+                gridTemplateColumns: "minmax(180px, 1fr) 120px 1fr",
+                gap: 8,
+                alignItems: "center",
+                marginBottom: 8,
+                paddingBottom: 8,
+                borderBottom: "1px solid var(--umbra-border)",
+              }}
+            >
+              <div>
+                <strong>{point.label}</strong> ({point.type})
+              </div>
+              <div>Register: {point.registerId}</div>
+              <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                <button
+                  onClick={() =>
+                    onOpenInteractionAsRole({
+                      role: "manager",
+                      businessId: business.businessId,
+                      interactionId: point.id,
+                      registerId: point.registerId,
+                    })
+                  }
+                >
+                  Open as Manager
+                </button>
+                <button
+                  onClick={() =>
+                    onOpenInteractionAsRole({
+                      role: "employee",
+                      businessId: business.businessId,
+                      interactionId: point.id,
+                      registerId: point.registerId,
+                    })
+                  }
+                >
+                  Open as Employee
+                </button>
+                <button
+                  onClick={() =>
+                    onOpenInteractionAsRole({
+                      role: "customer",
+                      businessId: business.businessId,
+                      interactionId: point.id,
+                      registerId: point.registerId,
+                    })
+                  }
+                >
+                  Open as Customer
+                </button>
+              </div>
+            </div>
+          ))}
+        </div>
+      ))}
+    </>
+  );
+}
+
 export default function ManagerView() {
   const { state, actions } = useRegisterStore();
   const s = state;
@@ -367,6 +449,10 @@ export default function ManagerView() {
         onUpdateDiscount={a.onUpdateDiscount}
         onToggleDiscountItem={a.onToggleDiscountItem}
         onRemoveDiscount={a.onRemoveDiscount}
+      />
+      <InteractionPrototypeSection
+        businessInteractions={s.businessInteractions}
+        onOpenInteractionAsRole={a.openInteractionAsRole}
       />
     </div>
   );

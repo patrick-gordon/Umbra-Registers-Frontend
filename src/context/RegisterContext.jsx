@@ -1,15 +1,25 @@
-import { createContext, useContext, useMemo, useReducer } from "react";
+import { createContext, useContext, useEffect, useMemo, useReducer } from "react";
 import {
   effectivePrice,
   isDiscountActive,
   mkSession,
   mkStore,
 } from "../utils/registerUtils";
+import { isFiveM, onNuiMessage, postNui } from "../utils/fivemNui";
+import { businessInteractions } from "../prototype/businessInteractions";
 
 const RegisterContext = createContext(null);
 
-const initialState = {
+// Single source of truth for UI + interaction state.
+// Backend may override parts of this via `syncState`.
+const createInitialState = () => ({
   view: "employee",
+  currentRole: "manager",
+  uiVisible: !isFiveM(),
+  nuiPendingAction: "",
+  nuiError: "",
+  lastNuiEvent: "",
+  interactionContext: null,
   stores: [mkStore("store-1", "Store 1")],
   activeStoreId: "store-1",
   activeRegisterId: "store-1-register-1",
@@ -26,7 +36,7 @@ const initialState = {
     endDate: "",
     itemIds: [],
   },
-};
+});
 
 function reducer(state, action) {
   switch (action.type) {
@@ -40,7 +50,7 @@ function reducer(state, action) {
 }
 
 export function RegisterProvider({ children }) {
-  const [appState, dispatch] = useReducer(reducer, initialState);
+  const [appState, dispatch] = useReducer(reducer, undefined, createInitialState);
 
   const activeStore =
     appState.stores.find((store) => store.id === appState.activeStoreId) ?? appState.stores[0];
@@ -118,6 +128,12 @@ export function RegisterProvider({ children }) {
     [tray],
   );
 
+  const allowedViews = useMemo(() => {
+    if (appState.currentRole === "manager") return ["manager", "employee", "customer"];
+    if (appState.currentRole === "employee") return ["employee", "customer"];
+    return ["customer"];
+  }, [appState.currentRole]);
+
   const setStateValue = (key, value) => dispatch({ type: "SET", key, value });
   const patchState = (payload) => dispatch({ type: "PATCH", payload });
 
@@ -136,6 +152,8 @@ export function RegisterProvider({ children }) {
     setStateValue("sessionsByRegister", nextSessions);
   };
 
+  // Recomputes tray prices/qty after manager changes (prices, stock, discounts) or session updates.
+  // This keeps frontend totals deterministic with currently selected discounts.
   const syncStoreTrays = (
     storeId,
     nextCatalog,
@@ -195,8 +213,55 @@ export function RegisterProvider({ children }) {
     } catch {}
   };
 
+  // Standardized outbound NUI call wrapper so every action gets consistent pending/error UI.
+  const sendNuiEvent = async (eventName, payload) => {
+    setStateValue("nuiPendingAction", eventName);
+    setStateValue("nuiError", "");
+    const response = await postNui(eventName, payload);
+    if (!response.ok) {
+      setStateValue("nuiError", response.error?.message ?? "NUI callback failed");
+    }
+    setStateValue("lastNuiEvent", eventName);
+    setStateValue("nuiPendingAction", "");
+    return response;
+  };
+
+  const isManager = appState.currentRole === "manager";
+  const canUseEmployeeActions =
+    appState.currentRole === "manager" || appState.currentRole === "employee";
+
   const actions = {
-    setView: (value) => setStateValue("view", value),
+    setView: (value) => {
+      if (!allowedViews.includes(value)) return;
+      setStateValue("view", value);
+    },
+    closeUi: () => {
+      setStateValue("uiVisible", false);
+      void sendNuiEvent("close", {});
+    },
+    clearNuiError: () => setStateValue("nuiError", ""),
+    // Prototype helper: simulate entering a register from a polyzone/prop in a given role.
+    openInteractionAsRole: ({ role, businessId, interactionId, registerId }) => {
+      const requestedView = role === "manager" ? "manager" : role;
+      const payload = {
+        role,
+        view: requestedView,
+        storeId: appState.activeStoreId,
+        registerId: registerId ?? appState.activeRegisterId,
+        interaction: {
+          businessId,
+          interactionId,
+        },
+      };
+      patchState({
+        uiVisible: true,
+        currentRole: role,
+        view: requestedView,
+        activeRegisterId: payload.registerId,
+        interactionContext: payload.interaction,
+      });
+      void sendNuiEvent("openRegister", payload);
+    },
     onStoreChange: (storeId) => {
       const store = appState.stores.find((candidate) => candidate.id === storeId);
       if (!store) return;
@@ -204,6 +269,7 @@ export function RegisterProvider({ children }) {
         activeStoreId: store.id,
         activeRegisterId: store.registers[0].id,
         managerCategoryFilter: "All Categories",
+        interactionContext: null,
       });
     },
     onRegisterChange: (value) => setStateValue("activeRegisterId", value),
@@ -217,6 +283,7 @@ export function RegisterProvider({ children }) {
     onSelectRegister: (value) => setStateValue("activeRegisterId", value),
 
     onAddStore: () => {
+      if (!isManager) return;
       const name = appState.newStoreName.trim();
       if (!name) return;
       const id = `store-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
@@ -236,6 +303,7 @@ export function RegisterProvider({ children }) {
     },
 
     onRemoveStore: (id) => {
+      if (!isManager) return;
       if (appState.stores.length <= 1) return;
       const removed = appState.stores.find((store) => store.id === id);
       if (!removed) return;
@@ -261,6 +329,7 @@ export function RegisterProvider({ children }) {
     },
 
     onAddRegister: () => {
+      if (!isManager) return;
       const name = appState.newRegisterName.trim();
       if (!name) return;
       const id = `${activeStore.id}-register-${Date.now()}-${Math.random()
@@ -279,6 +348,7 @@ export function RegisterProvider({ children }) {
     },
 
     onRemoveRegister: (id) => {
+      if (!isManager) return;
       if (registers.length <= 1) return;
       const nextRegisters = registers.filter((register) => register.id !== id);
       setActiveStore((store) => ({ ...store, registers: nextRegisters }));
@@ -295,8 +365,9 @@ export function RegisterProvider({ children }) {
       });
     },
 
+    // Employee flow starts here: build tray -> ring up -> hand to customer phase.
     onAddToTray: (id) => {
-      if (session.phase !== "employee") return;
+      if (!canUseEmployeeActions || session.phase !== "employee") return;
       const item = catalog.find((catalogItem) => catalogItem.id === id);
       if (!item) return;
 
@@ -333,7 +404,7 @@ export function RegisterProvider({ children }) {
     },
 
     onDecreaseTrayItem: (id) => {
-      if (session.phase !== "employee") return;
+      if (!canUseEmployeeActions || session.phase !== "employee") return;
       const nextTray = (appState.traysByRegister[appState.activeRegisterId] ?? [])
         .map((trayItem) =>
           trayItem.id === id ? { ...trayItem, qty: trayItem.qty - 1 } : trayItem,
@@ -351,7 +422,7 @@ export function RegisterProvider({ children }) {
     },
 
     onRemoveTrayItem: (id) => {
-      if (session.phase !== "employee") return;
+      if (!canUseEmployeeActions || session.phase !== "employee") return;
       const nextTray = (appState.traysByRegister[appState.activeRegisterId] ?? []).filter(
         (trayItem) => trayItem.id !== id,
       );
@@ -367,7 +438,7 @@ export function RegisterProvider({ children }) {
     },
 
     onRingUp: () => {
-      if (!tray.length || session.phase !== "employee") return;
+      if (!canUseEmployeeActions || !tray.length || session.phase !== "employee") return;
       const nextSession = { ...session, isRungUp: true };
       const selected = discounts.filter(
         (discount) =>
@@ -395,10 +466,16 @@ export function RegisterProvider({ children }) {
           [appState.activeRegisterId]: nextTray,
         },
       });
+      void sendNuiEvent("ringUp", {
+        storeId: activeStore?.id,
+        registerId: appState.activeRegisterId,
+        tray: nextTray,
+        total: nextTray.reduce((sum, item) => sum + item.unitPrice * item.qty, 0),
+      });
     },
 
     onToggleSessionDiscount: (id) => {
-      if (session.phase !== "employee") return;
+      if (!canUseEmployeeActions || session.phase !== "employee") return;
       setSession(appState.activeRegisterId, (currentSession) => ({
         ...currentSession,
         isRungUp: false,
@@ -408,14 +485,21 @@ export function RegisterProvider({ children }) {
       }));
     },
 
+    // Locks register into customer phase. Customer UI can then pay or steal.
     onConfirmCustomerActions: () => {
-      if (!session.isRungUp || session.phase !== "employee") return;
+      if (!canUseEmployeeActions || !session.isRungUp || session.phase !== "employee")
+        return;
       setSession(appState.activeRegisterId, (currentSession) => ({
         ...currentSession,
         phase: "customer",
       }));
+      void sendNuiEvent("enableCustomerActions", {
+        storeId: activeStore?.id,
+        registerId: appState.activeRegisterId,
+      });
     },
 
+    // Ends transaction + emits event for server-side payment handling/chime.
     onCustomerPay: () => {
       if (session.phase !== "customer") return;
       playPaymentChime();
@@ -426,8 +510,14 @@ export function RegisterProvider({ children }) {
           [appState.activeRegisterId]: mkSession(),
         },
       });
+      void sendNuiEvent("customerPaid", {
+        storeId: activeStore?.id,
+        registerId: appState.activeRegisterId,
+        total,
+      });
     },
 
+    // Ends transaction without payment. Backend should record this path.
     onCustomerSteal: () => {
       if (session.phase !== "customer") return;
       patchState({
@@ -437,9 +527,14 @@ export function RegisterProvider({ children }) {
           [appState.activeRegisterId]: mkSession(),
         },
       });
+      void sendNuiEvent("customerStole", {
+        storeId: activeStore?.id,
+        registerId: appState.activeRegisterId,
+      });
     },
 
     onUpdateItem: (id, field, raw) => {
+      if (!isManager) return;
       const nextCatalog = catalog.map((item) => {
         if (item.id !== id) return item;
         if (field === "name") return { ...item, name: raw };
@@ -464,6 +559,7 @@ export function RegisterProvider({ children }) {
     },
 
     onAddMenuItem: () => {
+      if (!isManager) return;
       const name = appState.newItem.name.trim();
       const price = Number(appState.newItem.price);
       const stock = Number(appState.newItem.stock);
@@ -493,6 +589,7 @@ export function RegisterProvider({ children }) {
     },
 
     onRemoveMenuItem: (id) => {
+      if (!isManager) return;
       const nextCatalog = catalog.filter((item) => item.id !== id);
       const nextDiscounts = discounts.map((discount) => ({
         ...discount,
@@ -509,6 +606,7 @@ export function RegisterProvider({ children }) {
     },
 
     onToggleNewDiscountItem: (itemId) => {
+      if (!isManager) return;
       const itemIds = appState.newDiscount.itemIds.includes(itemId)
         ? appState.newDiscount.itemIds.filter((id) => id !== itemId)
         : [...appState.newDiscount.itemIds, itemId];
@@ -516,6 +614,7 @@ export function RegisterProvider({ children }) {
     },
 
     onAddDiscount: () => {
+      if (!isManager) return;
       const name = appState.newDiscount.name.trim();
       const discountPrice = Number(appState.newDiscount.discountPrice);
       if (
@@ -557,6 +656,7 @@ export function RegisterProvider({ children }) {
     },
 
     onUpdateDiscount: (id, field, raw) => {
+      if (!isManager) return;
       const nextDiscounts = discounts.map((discount) => {
         if (discount.id !== id) return discount;
         if (field === "name") return { ...discount, name: raw };
@@ -575,6 +675,7 @@ export function RegisterProvider({ children }) {
     },
 
     onToggleDiscountItem: (discountId, itemId) => {
+      if (!isManager) return;
       const nextDiscounts = discounts.map((discount) =>
         discount.id !== discountId
           ? discount
@@ -590,11 +691,80 @@ export function RegisterProvider({ children }) {
     },
 
     onRemoveDiscount: (id) => {
+      if (!isManager) return;
       const nextDiscounts = discounts.filter((discount) => discount.id !== id);
       setActiveStore((store) => ({ ...store, discounts: nextDiscounts }));
       syncStoreTrays(activeStore.id, catalog, nextDiscounts);
     },
   };
+
+  useEffect(() => {
+    // Inbound message contract from FiveM client scripts.
+    // Keep action names aligned with FIVEM_INTEGRATION.md.
+    const unsub = onNuiMessage((message) => {
+      const payload = message.payload ?? {};
+      switch (message.action) {
+        case "openRegister": {
+          const role = payload.role ?? "employee";
+          const requestedView = payload.view ?? (role === "manager" ? "manager" : role);
+          patchState({
+            uiVisible: true,
+            currentRole: role,
+            ...(payload.storeId ? { activeStoreId: payload.storeId } : {}),
+            ...(payload.registerId ? { activeRegisterId: payload.registerId } : {}),
+            interactionContext: payload.interaction ?? null,
+            view: requestedView,
+          });
+          break;
+        }
+        case "closeRegister":
+          patchState({ uiVisible: false, interactionContext: null });
+          break;
+        case "setRole":
+          patchState({
+            currentRole: payload.role ?? "employee",
+            ...(payload.view ? { view: payload.view } : {}),
+          });
+          break;
+        case "setView":
+          if (typeof payload.view === "string") {
+            setStateValue("view", payload.view);
+          }
+          break;
+        case "syncState": {
+          // Accept only known keys so random payload keys cannot mutate arbitrary state.
+          const safe = {};
+          if (Array.isArray(payload.stores)) safe.stores = payload.stores;
+          if (payload.activeStoreId) safe.activeStoreId = payload.activeStoreId;
+          if (payload.activeRegisterId) safe.activeRegisterId = payload.activeRegisterId;
+          if (payload.traysByRegister) safe.traysByRegister = payload.traysByRegister;
+          if (payload.sessionsByRegister) safe.sessionsByRegister = payload.sessionsByRegister;
+          if (payload.currentRole) safe.currentRole = payload.currentRole;
+          if (payload.view) safe.view = payload.view;
+          if (payload.interactionContext !== undefined) {
+            safe.interactionContext = payload.interactionContext;
+          }
+          patchState(safe);
+          break;
+        }
+        default:
+          break;
+      }
+    });
+
+    return () => unsub();
+  }, []);
+
+  useEffect(() => {
+    // Common NUI UX: ESC closes the panel and releases focus.
+    const onKeyDown = (event) => {
+      if (event.key !== "Escape") return;
+      if (!appState.uiVisible) return;
+      actions.closeUi();
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [appState.uiVisible]);
 
   const state = {
     stores: appState.stores,
@@ -605,6 +775,14 @@ export function RegisterProvider({ children }) {
     activeRegisterId: appState.activeRegisterId,
     registerName,
     view: appState.view,
+    currentRole: appState.currentRole,
+    allowedViews,
+    uiVisible: appState.uiVisible,
+    nuiPendingAction: appState.nuiPendingAction,
+    nuiError: appState.nuiError,
+    lastNuiEvent: appState.lastNuiEvent,
+    interactionContext: appState.interactionContext,
+    businessInteractions,
     session,
     tray,
     customerItems,

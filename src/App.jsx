@@ -7,6 +7,10 @@ import { RegisterProvider, useRegisterStore } from "./context/RegisterContext";
 function AppShell() {
   const { state } = useRegisterStore();
 
+  if (!state.uiVisible) {
+    return null;
+  }
+
   return (
     <div style={{ padding: 20 }}>
       <h1>Register</h1>

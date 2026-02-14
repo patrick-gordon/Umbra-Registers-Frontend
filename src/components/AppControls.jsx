@@ -23,25 +23,63 @@ export default function AppControls() {
       </div>
 
       <div style={{ marginBottom: 20, display: "flex", gap: 8 }}>
-        <button
-          onClick={() => actions.setView("employee")}
-          style={{ fontWeight: state.view === "employee" ? "bold" : "normal" }}
-        >
-          Employee View
-        </button>
-        <button
-          onClick={() => actions.setView("customer")}
-          style={{ fontWeight: state.view === "customer" ? "bold" : "normal" }}
-        >
-          Customer View
-        </button>
-        <button
-          onClick={() => actions.setView("manager")}
-          style={{ fontWeight: state.view === "manager" ? "bold" : "normal" }}
-        >
-          Manager View
-        </button>
+        {state.allowedViews.includes("employee") && (
+          <button
+            onClick={() => actions.setView("employee")}
+            style={{ fontWeight: state.view === "employee" ? "bold" : "normal" }}
+          >
+            Employee View
+          </button>
+        )}
+        {state.allowedViews.includes("customer") && (
+          <button
+            onClick={() => actions.setView("customer")}
+            style={{ fontWeight: state.view === "customer" ? "bold" : "normal" }}
+          >
+            Customer View
+          </button>
+        )}
+        {state.allowedViews.includes("manager") && (
+          <button
+            onClick={() => actions.setView("manager")}
+            style={{ fontWeight: state.view === "manager" ? "bold" : "normal" }}
+          >
+            Manager View
+          </button>
+        )}
+        <button onClick={actions.closeUi}>Close</button>
       </div>
+
+      {state.nuiPendingAction && (
+        <div style={{ marginBottom: 8 }}>
+          Syncing: <strong>{state.nuiPendingAction}</strong>
+        </div>
+      )}
+
+      {state.lastNuiEvent && !state.nuiPendingAction && (
+        <div style={{ marginBottom: 8 }}>
+          Last NUI event: <strong>{state.lastNuiEvent}</strong>
+        </div>
+      )}
+
+      {state.nuiError && (
+        <div
+          style={{
+            marginBottom: 12,
+            padding: 8,
+            border: "1px solid var(--umbra-accent)",
+            borderRadius: 8,
+            background: "rgba(234, 80, 31, 0.15)",
+            display: "flex",
+            justifyContent: "space-between",
+            alignItems: "center",
+            gap: 8,
+          }}
+        >
+          <span>NUI Error: {state.nuiError}</span>
+          <button onClick={actions.clearNuiError}>Dismiss</button>
+        </div>
+      )}
 
       <div style={{ marginBottom: 16, display: "flex", gap: 8, alignItems: "center" }}>
         <label>
@@ -59,6 +97,13 @@ export default function AppControls() {
           </select>
         </label>
       </div>
+
+      {state.interactionContext && (
+        <div style={{ marginBottom: 10 }}>
+          Interaction: <strong>{state.interactionContext.businessId}</strong> /{" "}
+          <strong>{state.interactionContext.interactionId}</strong>
+        </div>
+      )}
     </>
   );
 }
