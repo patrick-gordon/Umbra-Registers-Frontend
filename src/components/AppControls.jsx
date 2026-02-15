@@ -5,22 +5,6 @@ export default function AppControls() {
 
   return (
     <div className="app-controls">
-      <div className="app-controls-row">
-        <label>
-          Store
-          <select
-            value={state.activeStoreId}
-            onChange={(e) => actions.onStoreChange(e.target.value)}
-          >
-            {state.stores.map((store) => (
-              <option key={store.id} value={store.id}>
-                {store.name}
-              </option>
-            ))}
-          </select>
-        </label>
-      </div>
-
       <div className="app-view-tabs">
         {state.allowedViews.includes("employee") && (
           <button
@@ -79,22 +63,6 @@ export default function AppControls() {
           <button onClick={actions.clearNuiError}>Close Error</button>
         </div>
       )}
-
-      <div className="app-controls-row">
-        <label>
-          Register
-          <select
-            value={state.activeRegisterId}
-            onChange={(e) => actions.onRegisterChange(e.target.value)}
-          >
-            {state.registers.map((register) => (
-              <option key={register.id} value={register.id}>
-                {register.name}
-              </option>
-            ))}
-          </select>
-        </label>
-      </div>
 
       {state.interactionContext && (
         <div className="app-status">

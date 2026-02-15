@@ -261,46 +261,6 @@ function RegisterStatsSection({
   );
 }
 
-function StoresSection({
-  storesCount,
-  activeStoreId,
-  newStoreName,
-  onStoreNameChange,
-  onAddStore,
-  onRemoveStore,
-}) {
-  return (
-    <SectionCard
-      title="Stores"
-      subtitle="Create and remove store records used by this register system."
-      collapsible
-      defaultOpen
-    >
-      <div className="mgr-form-row">
-        <input
-          type="text"
-          placeholder="New store name"
-          value={newStoreName}
-          onChange={(e) => onStoreNameChange(e.target.value)}
-        />
-        <button type="button" className="mgr-action-btn" onClick={onAddStore}>
-          <PlusIcon />
-          Add Store
-        </button>
-        <button
-          type="button"
-          className="mgr-danger-btn"
-          onClick={() => onRemoveStore(activeStoreId)}
-          disabled={storesCount <= 1}
-        >
-          <TrashIcon />
-          Remove Active Store
-        </button>
-      </div>
-    </SectionCard>
-  );
-}
-
 function MenuItemsSection({
   categories,
   categoryFilter,
@@ -672,14 +632,6 @@ export default function ManagerView() {
 
   return (
     <div className="mgr-shell view-shell">
-      <StoresSection
-        storesCount={s.storesCount}
-        activeStoreId={s.activeStoreId}
-        newStoreName={s.newStoreName}
-        onStoreNameChange={a.onStoreNameChange}
-        onAddStore={a.onAddStore}
-        onRemoveStore={a.onRemoveStore}
-      />
       <RegisterStatsSection
         activeRegisterId={s.activeRegisterId}
         registers={s.registers}

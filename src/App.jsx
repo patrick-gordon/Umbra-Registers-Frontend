@@ -35,6 +35,7 @@ function AppShell() {
             <div className="register-loading-spinner" aria-hidden="true" />
             <h3>Calibrating Starter Register</h3>
             <p>Scanning prices and computing total...</p>
+            <p>{Math.min(100, Math.max(0, state.session.processingProgress))}%</p>
             <div className="register-loading-bar">
               <div
                 className="register-loading-bar-fill"
