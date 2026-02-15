@@ -1,5 +1,4 @@
-import ItemGrid from "./ItemGrid";
-import Tray from "./Tray";
+import { useEffect, useState } from "react";
 import { useRegisterStore } from "../context/RegisterContext";
 
 function EmployeeActions({
@@ -8,27 +7,66 @@ function EmployeeActions({
   onToggleDiscount,
   onRingUp,
   onConfirm,
+  onClearTransaction,
   hasTrayItems,
   canConfirm,
+  canClearTransaction,
+  isProcessing,
+  processingProgress,
+  activeRegisterTier,
+  processingError,
 }) {
+  const isTierOne = activeRegisterTier?.level === 1;
+  const perks = [];
+  if (activeRegisterTier?.autoDiscountAssist) perks.push("Auto Discount Assist");
+  if ((activeRegisterTier?.employeeDefenseBonus ?? 0) > 0) {
+    perks.push(`Theft Defense +${activeRegisterTier.employeeDefenseBonus}`);
+  }
+  if ((activeRegisterTier?.instantStealBlockChance ?? 0) > 0) {
+    perks.push(
+      `Auto Block ${(activeRegisterTier.instantStealBlockChance * 100).toFixed(0)}%`,
+    );
+  }
+
   return (
-    <div
-      style={{
-        border: "1px solid var(--umbra-border)",
-        borderRadius: 8,
-        padding: 12,
-        marginBottom: 16,
-        background: "var(--umbra-surface-2)",
-      }}
-    >
-      <h3>Employee Actions</h3>
-      <p>Place items in tray, select discounts, Ring It Up, then confirm customer actions.</p>
-      <div style={{ display: "flex", gap: 12, flexWrap: "wrap", marginBottom: 10 }}>
+    <div className="view-card is-open employee-actions-card">
+      <div className="section-header">
+        <h3 style={{ marginTop: 0, marginBottom: 0 }}>Employee Actions</h3>
+        <span className="section-tag employee-actions-tag">Checkout Flow</span>
+      </div>
+      <p className="view-note" style={{ marginBottom: 6 }}>
+        Register: L{activeRegisterTier?.level ?? 1} {activeRegisterTier?.name}
+      </p>
+      <p className="view-note section-subtitle">
+        Build tray, apply discounts, ring up, then enable customer actions.
+      </p>
+      {perks.length > 0 && (
+        <div className="employee-perk-row">
+          {perks.map((perk) => (
+            <span key={perk}>{perk}</span>
+          ))}
+        </div>
+      )}
+      {isProcessing && isTierOne && (
+        <div className="employee-buffer-wrap">
+          <p className="view-note">Calculating totals... {processingProgress}%</p>
+          <div className="employee-buffer-track">
+            <div
+              className="employee-buffer-fill"
+              style={{ width: `${Math.min(100, Math.max(0, processingProgress))}%` }}
+            />
+          </div>
+        </div>
+      )}
+      {processingError && (
+        <p className="employee-processing-error">{processingError}</p>
+      )}
+      <div className="employee-discount-list employee-actions-discounts">
         {availableSessionDiscounts.length === 0 && (
-          <span>No available discounts for this tray.</span>
+          <span className="view-note employee-actions-empty">No available discounts.</span>
         )}
         {availableSessionDiscounts.map((discount) => (
-          <label key={discount.id} style={{ display: "flex", gap: 4 }}>
+          <label key={discount.id} className="employee-discount-chip">
             <input
               type="checkbox"
               checked={selectedDiscountIds.includes(discount.id)}
@@ -38,13 +76,109 @@ function EmployeeActions({
           </label>
         ))}
       </div>
-      <div style={{ display: "flex", gap: 8 }}>
-        <button onClick={onRingUp} disabled={!hasTrayItems}>
-          Ring It Up
+      <div className="employee-action-row employee-action-row--compact">
+        <button onClick={onRingUp} disabled={!hasTrayItems || isProcessing}>
+          Ring Up
         </button>
-        <button onClick={onConfirm} disabled={!canConfirm}>
-          Confirm & Enable Customer Actions
+        <button onClick={onConfirm} disabled={!canConfirm || isProcessing}>
+          Enable Customer Actions
         </button>
+        <button
+          onClick={onClearTransaction}
+          disabled={!canClearTransaction || isProcessing}
+          style={{
+            background: "linear-gradient(90deg, #8f204f, #b8363b)",
+            boxShadow: "inset 0 0 0.6rem rgba(255, 116, 116, 0.35)",
+          }}
+        >
+          Clear Transaction
+        </button>
+      </div>
+    </div>
+  );
+}
+
+function OrderBreakdown({ tray, total, onAdd, onDecrease, onRemove, isRungUp }) {
+  return (
+    <div className="view-card is-open employee-card-compact">
+      <div className="section-header">
+        <h3 style={{ marginTop: 0, marginBottom: 0 }}>Order Breakdown</h3>
+        <span className={`section-tag ${isRungUp ? "is-good" : ""}`}>
+          {isRungUp ? "Rung Up" : "Pending"}
+        </span>
+      </div>
+      {tray.length === 0 ? (
+        <p className="view-note" style={{ marginBottom: 0 }}>
+          No items added yet.
+        </p>
+      ) : (
+        <div className="employee-breakdown-list">
+          {tray.map((item) => (
+            <div key={item.id} className="employee-breakdown-row">
+              <span title={item.name} className="employee-item-name">
+                {item.name}
+              </span>
+              <button type="button" className="employee-qty-btn" onClick={() => onDecrease(item.id)}>
+                -
+              </button>
+              <span className="employee-qty-value">{item.qty}</span>
+              <button type="button" className="employee-qty-btn" onClick={() => onAdd(item.id)}>
+                +
+              </button>
+              <button type="button" className="employee-remove-btn" onClick={() => onRemove(item.id)}>
+                Remove
+              </button>
+              <strong className="employee-line-total">
+                ${(item.unitPrice * item.qty).toFixed(2)}
+              </strong>
+            </div>
+          ))}
+          <div className="employee-breakdown-footer">
+            <span className="view-note">{isRungUp ? "Rung up" : "Not rung up"}</span>
+            <strong>Total: ${total.toFixed(2)}</strong>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function StealDefensePanel({ stealMinigame, onTap }) {
+  const [now, setNow] = useState(Date.now());
+  const msLeft = Math.max(0, (stealMinigame?.endsAt ?? 0) - now);
+  const secondsLeft = (msLeft / 1000).toFixed(1);
+  const customerScore = stealMinigame?.customerScore ?? 0;
+  const employeeScore = stealMinigame?.employeeScore ?? 0;
+  const total = customerScore + employeeScore;
+  const advantage = total > 0 ? (customerScore - employeeScore) / total : 0;
+  const markerPosition = 50 + advantage * 45;
+
+  useEffect(() => {
+    const onKeyDown = (event) => {
+      if (event.repeat) return;
+      if (event.code !== "KeyE" && event.key.toLowerCase() !== "e") return;
+      onTap();
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [onTap]);
+
+  useEffect(() => {
+    const id = window.setInterval(() => setNow(Date.now()), 100);
+    return () => window.clearInterval(id);
+  }, []);
+
+  return (
+    <div className="view-card is-open">
+      <div className="section-header">
+        <h3 style={{ marginTop: 0, marginBottom: 0 }}>Theft Defense</h3>
+        <span className="section-tag">Mash E</span>
+      </div>
+      <p className="view-note">Press E repeatedly to block theft.</p>
+      <p className="view-note">Time Left: {secondsLeft}s</p>
+      <div className="tug-track">
+        <div className="tug-track-fill" />
+        <div className="tug-track-marker" style={{ left: `${markerPosition}%` }} />
       </div>
     </div>
   );
@@ -54,43 +188,80 @@ export default function EmployeeView() {
   const { state, actions } = useRegisterStore();
 
   return (
-    <div>
-      <h2 style={{ marginTop: 0 }}>
+    <div className="view-shell view-shell--compact view-layout">
+      <h2 style={{ marginTop: 0, textAlign: "center" }}>
         {state.activeStoreName} - {state.registerName}
       </h2>
 
-      <EmployeeActions
-        availableSessionDiscounts={state.availableSessionDiscounts}
-        selectedDiscountIds={state.session.selectedDiscountIds}
-        onToggleDiscount={actions.onToggleSessionDiscount}
-        onRingUp={actions.onRingUp}
-        onConfirm={actions.onConfirmCustomerActions}
-        hasTrayItems={state.tray.length > 0}
-        canConfirm={state.session.isRungUp}
-      />
+      {state.session.phase === "employee" && (
+        <div className="view-grid-two employee-top-grid">
+          <div className="view-card is-open employee-card-compact">
+            <div className="section-header">
+              <h3 style={{ marginTop: 0, marginBottom: 0 }}>Item Picker</h3>
+              <span className="section-tag">Menu</span>
+            </div>
+            <p className="view-note section-subtitle">
+              Select menu items to build the tray before ringing up.
+            </p>
+            <div className="employee-item-picker">
+              {state.customerItems.map((item) => {
+                const qtyInTray =
+                  state.tray.find((trayItem) => trayItem.id === item.id)?.qty ?? 0;
+                const outOfStock = qtyInTray >= item.stock;
+                return (
+                  <button
+                    key={item.id}
+                    className="employee-item-chip"
+                    type="button"
+                    onClick={() => actions.onAddToTray(item.id)}
+                    disabled={outOfStock}
+                  >
+                    <span>{item.name}</span>
+                    <strong>${item.effectivePrice.toFixed(2)}</strong>
+                  </button>
+                );
+              })}
+            </div>
+          </div>
 
-      {state.session.phase === "customer" && (
-        <p style={{ marginBottom: 12 }}>
-          Customer actions are enabled. Switch to Customer View for payment or steal.
-        </p>
+          <OrderBreakdown
+            tray={state.tray}
+            total={state.total}
+            onAdd={actions.onAddToTray}
+            onDecrease={actions.onDecreaseTrayItem}
+            onRemove={actions.onRemoveTrayItem}
+            isRungUp={state.session.isRungUp}
+          />
+        </div>
       )}
 
-      <div style={{ display: "flex", gap: 40 }}>
-        <ItemGrid
-          items={state.customerItems}
-          tray={state.tray}
-          onAdd={actions.onAddToTray}
-          disabled={state.session.phase !== "employee"}
+      {state.session.phase === "stealMinigame" ? (
+        <StealDefensePanel
+          stealMinigame={state.session.stealMinigame}
+          onTap={actions.onStealMinigameTap}
         />
-        <Tray
-          tray={state.tray}
-          onAdd={actions.onAddToTray}
-          onDecrease={actions.onDecreaseTrayItem}
-          onRemove={actions.onRemoveTrayItem}
-          controlsDisabled={state.session.phase !== "employee"}
-          showCheckout={false}
+      ) : (
+        <EmployeeActions
+          availableSessionDiscounts={state.availableSessionDiscounts}
+          selectedDiscountIds={state.session.selectedDiscountIds}
+          onToggleDiscount={actions.onToggleSessionDiscount}
+          onRingUp={actions.onRingUp}
+          onConfirm={actions.onConfirmCustomerActions}
+          onClearTransaction={actions.onClearTransaction}
+          hasTrayItems={state.tray.length > 0}
+          canConfirm={state.session.isRungUp}
+          canClearTransaction={
+            state.tray.length > 0 ||
+            state.session.isRungUp ||
+            state.session.selectedDiscountIds.length > 0 ||
+            state.session.phase !== "employee"
+          }
+          isProcessing={state.session.isProcessing}
+          processingProgress={state.session.processingProgress}
+          activeRegisterTier={state.activeRegisterTier}
+          processingError={state.session.processingError}
         />
-      </div>
+      )}
     </div>
   );
 }

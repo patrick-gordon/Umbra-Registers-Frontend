@@ -4,14 +4,13 @@ export default function AppControls() {
   const { state, actions } = useRegisterStore();
 
   return (
-    <>
-      <div style={{ marginBottom: 16, display: "flex", gap: 8, alignItems: "center" }}>
+    <div className="app-controls">
+      <div className="app-controls-row">
         <label>
-          Active Store:
+          Store
           <select
             value={state.activeStoreId}
             onChange={(e) => actions.onStoreChange(e.target.value)}
-            style={{ marginLeft: 8 }}
           >
             {state.stores.map((store) => (
               <option key={store.id} value={store.id}>
@@ -22,42 +21,42 @@ export default function AppControls() {
         </label>
       </div>
 
-      <div style={{ marginBottom: 20, display: "flex", gap: 8 }}>
+      <div className="app-view-tabs">
         {state.allowedViews.includes("employee") && (
           <button
             onClick={() => actions.setView("employee")}
-            style={{ fontWeight: state.view === "employee" ? "bold" : "normal" }}
+            className={state.view === "employee" ? "is-active" : ""}
           >
-            Employee View
+            Employee
           </button>
         )}
         {state.allowedViews.includes("customer") && (
           <button
             onClick={() => actions.setView("customer")}
-            style={{ fontWeight: state.view === "customer" ? "bold" : "normal" }}
+            className={state.view === "customer" ? "is-active" : ""}
           >
-            Customer View
+            Customer
           </button>
         )}
         {state.allowedViews.includes("manager") && (
           <button
             onClick={() => actions.setView("manager")}
-            style={{ fontWeight: state.view === "manager" ? "bold" : "normal" }}
+            className={state.view === "manager" ? "is-active" : ""}
           >
-            Manager View
+            Manager
           </button>
         )}
-        <button onClick={actions.closeUi}>Close</button>
+        <button onClick={actions.closeUi}>Close Panel</button>
       </div>
 
       {state.nuiPendingAction && (
-        <div style={{ marginBottom: 8 }}>
+        <div className="app-status">
           Syncing: <strong>{state.nuiPendingAction}</strong>
         </div>
       )}
 
       {state.lastNuiEvent && !state.nuiPendingAction && (
-        <div style={{ marginBottom: 8 }}>
+        <div className="app-status">
           Last NUI event: <strong>{state.lastNuiEvent}</strong>
         </div>
       )}
@@ -77,17 +76,16 @@ export default function AppControls() {
           }}
         >
           <span>NUI Error: {state.nuiError}</span>
-          <button onClick={actions.clearNuiError}>Dismiss</button>
+          <button onClick={actions.clearNuiError}>Close Error</button>
         </div>
       )}
 
-      <div style={{ marginBottom: 16, display: "flex", gap: 8, alignItems: "center" }}>
+      <div className="app-controls-row">
         <label>
-          Active Register:
+          Register
           <select
             value={state.activeRegisterId}
             onChange={(e) => actions.onRegisterChange(e.target.value)}
-            style={{ marginLeft: 8 }}
           >
             {state.registers.map((register) => (
               <option key={register.id} value={register.id}>
@@ -99,11 +97,11 @@ export default function AppControls() {
       </div>
 
       {state.interactionContext && (
-        <div style={{ marginBottom: 10 }}>
+        <div className="app-status">
           Interaction: <strong>{state.interactionContext.businessId}</strong> /{" "}
           <strong>{state.interactionContext.interactionId}</strong>
         </div>
       )}
-    </>
+    </div>
   );
 }

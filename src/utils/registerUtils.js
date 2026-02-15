@@ -19,7 +19,19 @@ export const mkStore = (id, name) => ({
 export const mkSession = () => ({
   phase: "employee",
   isRungUp: false,
+  isProcessing: false,
+  processingProgress: 0,
+  processingError: "",
   selectedDiscountIds: [],
+  stealMinigame: {
+    active: false,
+    startedAt: 0,
+    endsAt: 0,
+    durationMs: 10000,
+    customerScore: 0,
+    employeeScore: 0,
+    winner: "",
+  },
 });
 
 export const isDiscountActive = (discount) => {

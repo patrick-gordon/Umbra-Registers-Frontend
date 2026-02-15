@@ -17,30 +17,42 @@ export default function Tray({
       {tray.length === 0 && <p>No items yet</p>}
 
       {tray.map((item) => (
-        <div key={item.id} style={{ marginBottom: 10 }}>
-          {item.name}
+        <div
+          key={item.id}
+          style={{
+            marginBottom: 8,
+            display: "grid",
+            gridTemplateColumns: "minmax(0, 1fr) 32px 34px 32px 74px 96px",
+            gap: 6,
+            alignItems: "center",
+          }}
+        >
+          <span
+            title={item.name}
+            style={{
+              overflow: "hidden",
+              textOverflow: "ellipsis",
+              whiteSpace: "nowrap",
+            }}
+          >
+            {item.name}
+          </span>
 
           <button onClick={() => onDecrease(item.id)} disabled={controlsDisabled}>
             -
           </button>
 
-          <span style={{ margin: "0 10px" }}>{item.qty}</span>
+          <span style={{ textAlign: "center" }}>{item.qty}</span>
 
           <button onClick={() => onAdd(item.id)} disabled={controlsDisabled}>
             +
           </button>
 
-          <button
-            onClick={() => onRemove(item.id)}
-            style={{ marginLeft: 10 }}
-            disabled={controlsDisabled}
-          >
+          <button onClick={() => onRemove(item.id)} disabled={controlsDisabled}>
             Remove
           </button>
 
-          <span style={{ marginLeft: 10 }}>
-            ${item.unitPrice.toFixed(2)} each
-          </span>
+          <span style={{ textAlign: "right" }}>${item.unitPrice.toFixed(2)} each</span>
         </div>
       ))}
 
