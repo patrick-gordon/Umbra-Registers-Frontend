@@ -25,6 +25,7 @@ If you are developing a production application, we recommend using TypeScript wi
   - same keys inside `interaction` or `interactionContext`
 - Send `setRole` updates when role changes; include membership when available.
 - Send `syncState` updates for state rehydration; include membership when available.
+- For scheduled event promotions, include `activeEventTags` (or `eventTags`) in `syncState`.
 - Optional for persistent analytics: include `registerStatsByRegister` (or `statsByRegister`) in `syncState`.
 - Optional minigame hooks: handle `stealMinigameStarted` and `stealMinigameResolved` callbacks.
 - Membership rule enforced by frontend:

@@ -1,5 +1,5 @@
-import { useEffect, useMemo, useState } from "react";
-import { useRegisterStore } from "../context/RegisterContext";
+import { useMemo, useState } from "react";
+import { useRegisterStore } from "../context/useRegisterStore";
 import "./ManagerView.css";
 
 function PencilIcon() {
@@ -73,6 +73,16 @@ const moneyFormatter = new Intl.NumberFormat("en-US", {
   currency: "USD",
 });
 
+const WEEKDAY_OPTIONS = [
+  { value: 0, label: "Sun" },
+  { value: 1, label: "Mon" },
+  { value: 2, label: "Tue" },
+  { value: 3, label: "Wed" },
+  { value: 4, label: "Thu" },
+  { value: 5, label: "Fri" },
+  { value: 6, label: "Sat" },
+];
+
 function formatMoney(value) {
   return moneyFormatter.format(value || 0);
 }
@@ -95,26 +105,23 @@ function RegisterStatsSection({
   onUpgradeRegisterTier,
 }) {
   const [selectedRegisterId, setSelectedRegisterId] = useState("all");
-
-  useEffect(() => {
-    const validIds = new Set(registers.map((register) => register.id));
-    if (selectedRegisterId !== "all" && !validIds.has(selectedRegisterId)) {
-      setSelectedRegisterId("all");
-    }
-  }, [registers, selectedRegisterId]);
-
-  useEffect(() => {
-    if (!activeRegisterId) return;
-    if (selectedRegisterId !== "all") return;
-    setSelectedRegisterId("all");
-  }, [activeRegisterId, selectedRegisterId]);
+  const validRegisterIds = useMemo(
+    () => new Set(registers.map((register) => register.id)),
+    [registers],
+  );
+  const effectiveSelectedRegisterId =
+    selectedRegisterId === "all" || validRegisterIds.has(selectedRegisterId)
+      ? selectedRegisterId
+      : "all";
 
   const scopedRows = useMemo(
     () =>
-      selectedRegisterId === "all"
+      effectiveSelectedRegisterId === "all"
         ? managerRegisterStats
-        : managerRegisterStats.filter((row) => row.registerId === selectedRegisterId),
-    [managerRegisterStats, selectedRegisterId],
+        : managerRegisterStats.filter(
+            (row) => row.registerId === effectiveSelectedRegisterId,
+          ),
+    [effectiveSelectedRegisterId, managerRegisterStats],
   );
 
   const aggregate = useMemo(
@@ -152,7 +159,9 @@ function RegisterStatsSection({
   const avgTicket =
     aggregate.paidTransactions > 0 ? aggregate.totalSales / aggregate.paidTransactions : 0;
   const selectedRegisterForTier =
-    selectedRegisterId === "all" ? activeRegisterId : selectedRegisterId;
+    effectiveSelectedRegisterId === "all"
+      ? activeRegisterId ?? registers[0]?.id
+      : effectiveSelectedRegisterId;
   const selectedRow =
     managerRegisterStats.find((row) => row.registerId === selectedRegisterForTier) ??
     managerRegisterStats[0];
@@ -161,6 +170,13 @@ function RegisterStatsSection({
       registerTierCatalog[0]
     : registerTierCatalog[0];
   const hasNextTier = selectedTier && selectedTier.level < registerTierCatalog.length;
+  const suspiciousRows = useMemo(
+    () =>
+      scopedRows.filter(
+        (row) => Array.isArray(row.suspiciousFlags) && row.suspiciousFlags.length > 0,
+      ),
+    [scopedRows],
+  );
 
   return (
     <SectionCard
@@ -173,7 +189,7 @@ function RegisterStatsSection({
         <label htmlFor="register-stats-filter">Stats Scope</label>
         <select
           id="register-stats-filter"
-          value={selectedRegisterId}
+          value={effectiveSelectedRegisterId}
           onChange={(e) => setSelectedRegisterId(e.target.value)}
         >
           <option value="all">All Registers (Active Store)</option>
@@ -256,6 +272,31 @@ function RegisterStatsSection({
           </div>
         </div>
       )}
+
+      <div className="mgr-alert-panel">
+        <p className="mgr-tier-kicker">Suspicious Activity Flags</p>
+        {suspiciousRows.length === 0 ? (
+          <p className="mgr-alert-empty">No active suspicious activity flags.</p>
+        ) : (
+          <div className="mgr-alert-list">
+            {suspiciousRows.map((row) => (
+              <div key={`alerts-${row.registerId}`} className="mgr-alert-row">
+                <strong>{row.registerName}</strong>
+                <div className="mgr-alert-chip-row">
+                  {row.suspiciousFlags.map((flag) => (
+                    <span
+                      key={`${row.registerId}-${flag.code}`}
+                      className={`mgr-alert-chip mgr-alert-chip--${flag.severity}`}
+                    >
+                      {flag.label} ({flag.count})
+                    </span>
+                  ))}
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
 
     </SectionCard>
   );
@@ -420,10 +461,12 @@ function DiscountsSection({
   newDiscount,
   onNewDiscountChange,
   onToggleNewDiscountItem,
+  onToggleNewDiscountWeekday,
   onAddDiscount,
   sortedCatalog,
   discounts,
   onUpdateDiscount,
+  onToggleDiscountWeekday,
   onToggleDiscountItem,
   onRemoveDiscount,
 }) {
@@ -432,16 +475,16 @@ function DiscountsSection({
   return (
     <SectionCard
       title="Discounts"
-      subtitle="Create promo windows and apply discounts to selected menu items."
+      subtitle="Create scheduled promotions (happy hour, weekday, and event specials)."
       collapsible
       defaultOpen={false}
     >
       <div className="mgr-sub-card">
-        <h3>Add Discount</h3>
+        <h3>Add Promotion</h3>
         <div className="mgr-form-row">
           <input
             type="text"
-            placeholder="Discount name"
+            placeholder="Promotion name"
             value={newDiscount.name}
             onChange={(e) => onNewDiscountChange("name", e.target.value)}
           />
@@ -453,6 +496,15 @@ function DiscountsSection({
             value={newDiscount.discountPrice}
             onChange={(e) => onNewDiscountChange("discountPrice", e.target.value)}
           />
+          <select
+            value={newDiscount.promotionType}
+            onChange={(e) => onNewDiscountChange("promotionType", e.target.value)}
+          >
+            <option value="standard">Standard</option>
+            <option value="happyHour">Happy Hour</option>
+            <option value="weekdayDeal">Weekday Deal</option>
+            <option value="eventSpecial">Event Special</option>
+          </select>
           <input
             type="date"
             value={newDiscount.startDate}
@@ -463,10 +515,38 @@ function DiscountsSection({
             value={newDiscount.endDate}
             onChange={(e) => onNewDiscountChange("endDate", e.target.value)}
           />
+          <input
+            type="time"
+            value={newDiscount.startTime}
+            onChange={(e) => onNewDiscountChange("startTime", e.target.value)}
+          />
+          <input
+            type="time"
+            value={newDiscount.endTime}
+            onChange={(e) => onNewDiscountChange("endTime", e.target.value)}
+          />
+          <input
+            type="text"
+            placeholder="Event tag (optional)"
+            value={newDiscount.eventTag}
+            onChange={(e) => onNewDiscountChange("eventTag", e.target.value)}
+          />
           <button type="button" className="mgr-action-btn" onClick={onAddDiscount}>
             <PlusIcon />
-            Add Discount
+            Add Promotion
           </button>
+        </div>
+        <div className="mgr-checkbox-grid">
+          {WEEKDAY_OPTIONS.map((day) => (
+            <label key={`new-discount-day-${day.value}`}>
+              <input
+                type="checkbox"
+                checked={newDiscount.weekdays.includes(day.value)}
+                onChange={() => onToggleNewDiscountWeekday(day.value)}
+              />
+              {day.label}
+            </label>
+          ))}
         </div>
         <div className="mgr-checkbox-grid">
           {sortedCatalog.map((item) => (
@@ -506,17 +586,48 @@ function DiscountsSection({
                   onUpdateDiscount(discount.id, "discountPrice", e.target.value)
                 }
               />
+              <select
+                value={discount.promotionType ?? "standard"}
+                disabled={!isEditing}
+                onChange={(e) =>
+                  onUpdateDiscount(discount.id, "promotionType", e.target.value)
+                }
+              >
+                <option value="standard">Standard</option>
+                <option value="happyHour">Happy Hour</option>
+                <option value="weekdayDeal">Weekday Deal</option>
+                <option value="eventSpecial">Event Special</option>
+              </select>
               <input
                 type="date"
-                value={discount.startDate}
+                value={discount.startDate ?? ""}
                 disabled={!isEditing}
                 onChange={(e) => onUpdateDiscount(discount.id, "startDate", e.target.value)}
               />
               <input
                 type="date"
-                value={discount.endDate}
+                value={discount.endDate ?? ""}
                 disabled={!isEditing}
                 onChange={(e) => onUpdateDiscount(discount.id, "endDate", e.target.value)}
+              />
+              <input
+                type="time"
+                value={discount.startTime ?? ""}
+                disabled={!isEditing}
+                onChange={(e) => onUpdateDiscount(discount.id, "startTime", e.target.value)}
+              />
+              <input
+                type="time"
+                value={discount.endTime ?? ""}
+                disabled={!isEditing}
+                onChange={(e) => onUpdateDiscount(discount.id, "endTime", e.target.value)}
+              />
+              <input
+                type="text"
+                placeholder="Event tag"
+                value={discount.eventTag ?? ""}
+                disabled={!isEditing}
+                onChange={(e) => onUpdateDiscount(discount.id, "eventTag", e.target.value)}
               />
               <div className="mgr-actions">
                 <IconButton
@@ -537,6 +648,20 @@ function DiscountsSection({
             </div>
 
             <div className="mgr-checkbox-grid">
+              {WEEKDAY_OPTIONS.map((day) => (
+                <label key={`${discount.id}-day-${day.value}`}>
+                  <input
+                    type="checkbox"
+                    checked={(discount.weekdays ?? []).includes(day.value)}
+                    disabled={!isEditing}
+                    onChange={() => onToggleDiscountWeekday(discount.id, day.value)}
+                  />
+                  {day.label}
+                </label>
+              ))}
+            </div>
+
+            <div className="mgr-checkbox-grid">
               {sortedCatalog.map((item) => (
                 <label key={`${discount.id}-${item.id}`}>
                   <input
@@ -544,6 +669,121 @@ function DiscountsSection({
                     checked={discount.itemIds.includes(item.id)}
                     disabled={!isEditing}
                     onChange={() => onToggleDiscountItem(discount.id, item.id)}
+                  />
+                  {item.name}
+                </label>
+              ))}
+            </div>
+          </div>
+        );
+      })}
+    </SectionCard>
+  );
+}
+
+function CombosSection({
+  newCombo,
+  onNewComboChange,
+  onToggleNewComboItem,
+  onAddCombo,
+  sortedCatalog,
+  combos,
+  onUpdateCombo,
+  onToggleComboItem,
+  onRemoveCombo,
+}) {
+  const [editingComboId, setEditingComboId] = useState(null);
+
+  return (
+    <SectionCard
+      title="Meal Combos"
+      subtitle="Create bundled meals with fixed combo pricing."
+      collapsible
+      defaultOpen={false}
+    >
+      <div className="mgr-sub-card">
+        <h3>Add Combo</h3>
+        <div className="mgr-form-row">
+          <input
+            type="text"
+            placeholder="Combo name"
+            value={newCombo.name}
+            onChange={(e) => onNewComboChange("name", e.target.value)}
+          />
+          <input
+            type="number"
+            min="0"
+            step="0.01"
+            placeholder="Bundle price"
+            value={newCombo.bundlePrice}
+            onChange={(e) => onNewComboChange("bundlePrice", e.target.value)}
+          />
+          <button type="button" className="mgr-action-btn" onClick={onAddCombo}>
+            <PlusIcon />
+            Add Combo
+          </button>
+        </div>
+        <div className="mgr-checkbox-grid">
+          {sortedCatalog.map((item) => (
+            <label key={`new-combo-${item.id}`}>
+              <input
+                type="checkbox"
+                checked={newCombo.itemIds.includes(item.id)}
+                onChange={() => onToggleNewComboItem(item.id)}
+              />
+              {item.name}
+            </label>
+          ))}
+        </div>
+      </div>
+
+      {combos.map((combo) => {
+        const isEditing = editingComboId === combo.id;
+        return (
+          <div
+            key={combo.id}
+            className={`mgr-sub-card mgr-sub-card--discount ${isEditing ? "is-editing" : ""}`}
+          >
+            <div className="mgr-form-row">
+              <input
+                type="text"
+                value={combo.name}
+                disabled={!isEditing}
+                onChange={(e) => onUpdateCombo(combo.id, "name", e.target.value)}
+              />
+              <input
+                type="number"
+                min="0"
+                step="0.01"
+                value={combo.bundlePrice}
+                disabled={!isEditing}
+                onChange={(e) => onUpdateCombo(combo.id, "bundlePrice", e.target.value)}
+              />
+              <div className="mgr-actions">
+                <IconButton
+                  label={isEditing ? "Stop editing combo" : "Edit combo"}
+                  variant={isEditing ? "active" : "neutral"}
+                  onClick={() => setEditingComboId(isEditing ? null : combo.id)}
+                >
+                  <PencilIcon />
+                </IconButton>
+                <IconButton
+                  label={`Delete ${combo.name}`}
+                  variant="danger"
+                  onClick={() => onRemoveCombo(combo.id)}
+                >
+                  <TrashIcon />
+                </IconButton>
+              </div>
+            </div>
+            <div className="mgr-checkbox-grid">
+              {sortedCatalog.map((item) => (
+                <label key={`${combo.id}-${item.id}`}>
+                  <input
+                    type="checkbox"
+                    checked={combo.itemIds.includes(item.id)}
+                    disabled={!isEditing}
+                    onChange={() => onToggleComboItem(combo.id, item.id)}
                   />
                   {item.name}
                 </label>
@@ -654,12 +894,25 @@ export default function ManagerView() {
         newDiscount={s.newDiscount}
         onNewDiscountChange={a.onNewDiscountChange}
         onToggleNewDiscountItem={a.onToggleNewDiscountItem}
+        onToggleNewDiscountWeekday={a.onToggleNewDiscountWeekday}
         onAddDiscount={a.onAddDiscount}
         sortedCatalog={s.sortedCatalog}
         discounts={s.discounts}
         onUpdateDiscount={a.onUpdateDiscount}
+        onToggleDiscountWeekday={a.onToggleDiscountWeekday}
         onToggleDiscountItem={a.onToggleDiscountItem}
         onRemoveDiscount={a.onRemoveDiscount}
+      />
+      <CombosSection
+        newCombo={s.newCombo}
+        onNewComboChange={a.onNewComboChange}
+        onToggleNewComboItem={a.onToggleNewComboItem}
+        onAddCombo={a.onAddCombo}
+        sortedCatalog={s.sortedCatalog}
+        combos={s.combos}
+        onUpdateCombo={a.onUpdateCombo}
+        onToggleComboItem={a.onToggleComboItem}
+        onRemoveCombo={a.onRemoveCombo}
       />
       <InteractionPrototypeSection
         businessInteractions={s.businessInteractions}

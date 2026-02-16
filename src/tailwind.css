@@ -1,16 +1,21 @@
 :root {
-  --umbra-bg: #0b0b0b;
-  --umbra-surface: #171421;
-  --umbra-surface-2: #221a33;
-  --umbra-text: #ffffff;
-  --umbra-muted: #b097ff;
-  --umbra-border: #753ace;
+  --umbra-bg: #0a0813;
+  --umbra-surface: #171126;
+  --umbra-surface-2: #211633;
+  --umbra-surface-raised: #2a1d3f;
+  --umbra-text: #f7f4ff;
+  --umbra-text-muted: #d5c6f4;
+  --umbra-text-dim: #b7a3dc;
+  --umbra-muted: var(--umbra-text-dim);
+  --umbra-border: #6f43b7;
+  --umbra-border-soft: #8d63cf;
   --umbra-primary: #753ace;
-  --umbra-primary-2: #7c4dc3;
+  --umbra-primary-2: #8d58db;
   --umbra-accent: #ea501f;
-  --umbra-accent-2: #d06666;
-  --umbra-success: #1d8686;
-  --umbra-success-2: #41c4c3;
+  --umbra-accent-2: #ff936d;
+  --umbra-danger: #c44f67;
+  --umbra-success: #31a296;
+  --umbra-success-2: #5fd3c6;
   --umbra-highlight: #f8d247;
 }
 
@@ -34,35 +39,55 @@ h3 {
 input,
 select,
 textarea {
-  background-color: var(--umbra-surface);
+  background-color: color-mix(in srgb, var(--umbra-surface) 88%, #060c16 12%);
   color: var(--umbra-text);
-  border: 1px solid var(--umbra-border);
-  border-radius: 7px;
+  border: 1px solid color-mix(in srgb, var(--umbra-border-soft) 72%, transparent 28%);
+  border-radius: 8px;
   padding: 0.42rem 0.55rem;
-  font-size: 0.9rem;
+  font-size: 0.86rem;
+  transition: border-color 160ms ease, box-shadow 160ms ease;
 }
 
 input::placeholder {
-  color: #a7a0c2;
+  color: var(--umbra-text-dim);
+}
+
+input:focus-visible,
+select:focus-visible,
+textarea:focus-visible {
+  outline: none;
+  border-color: color-mix(in srgb, var(--umbra-primary-2) 65%, #ffffff 35%);
+  box-shadow: 0 0 0 2px rgba(141, 88, 219, 0.2);
 }
 
 button {
-  border: 1px solid transparent;
-  border-radius: 7px;
-  padding: 0.45rem 0.75rem;
-  font-weight: 600;
-  font-size: 0.9rem;
+  border: 1px solid color-mix(in srgb, var(--umbra-primary-2) 45%, transparent 55%);
+  border-radius: 8px;
+  padding: 0.45rem 0.74rem;
+  font-weight: 650;
+  font-size: 0.85rem;
   color: var(--umbra-text);
-  background: linear-gradient(90deg, var(--umbra-primary), var(--umbra-primary-2));
-  box-shadow: inset 0 0 0.6rem rgba(176, 136, 237, 0.6);
-  transition: filter 0.2s ease, opacity 0.2s ease;
+  background: linear-gradient(110deg, var(--umbra-primary), var(--umbra-primary-2));
+  box-shadow: inset 0 0 0.6rem rgba(148, 103, 225, 0.35);
+  transition: filter 160ms ease, opacity 160ms ease, transform 120ms ease;
 }
 
 button:hover {
-  filter: brightness(1.12);
+  filter: brightness(1.08);
+}
+
+button:active {
+  transform: translateY(1px);
+}
+
+button:focus-visible {
+  outline: none;
+  border-color: color-mix(in srgb, var(--umbra-primary-2) 65%, #ffffff 35%);
+  box-shadow: 0 0 0 2px rgba(141, 88, 219, 0.25);
 }
 
 button:disabled {
-  opacity: 0.45;
+  opacity: 0.48;
   cursor: not-allowed;
+  transform: none;
 }

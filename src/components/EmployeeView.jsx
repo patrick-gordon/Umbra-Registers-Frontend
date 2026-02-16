@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { useRegisterStore } from "../context/RegisterContext";
+import { useRegisterStore } from "../context/useRegisterStore";
 
 function EmployeeActions({
   availableSessionDiscounts,
@@ -31,10 +31,10 @@ function EmployeeActions({
   return (
     <div className="view-card is-open employee-actions-card">
       <div className="section-header">
-        <h3 style={{ marginTop: 0, marginBottom: 0 }}>Employee Actions</h3>
+        <h3 className="card-title">Employee Actions</h3>
         <span className="section-tag employee-actions-tag">Checkout Flow</span>
       </div>
-      <p className="view-note" style={{ marginBottom: 6 }}>
+      <p className="view-note view-note--compact">
         Register: L{activeRegisterTier?.level ?? 1} {activeRegisterTier?.name}
       </p>
       <p className="view-note section-subtitle">
@@ -77,19 +77,17 @@ function EmployeeActions({
         ))}
       </div>
       <div className="employee-action-row employee-action-row--compact">
-        <button onClick={onRingUp} disabled={!hasTrayItems || isProcessing}>
+        <button type="button" onClick={onRingUp} disabled={!hasTrayItems || isProcessing}>
           Ring Up
         </button>
-        <button onClick={onConfirm} disabled={!canConfirm || isProcessing}>
+        <button type="button" onClick={onConfirm} disabled={!canConfirm || isProcessing}>
           Enable Customer Actions
         </button>
         <button
+          type="button"
+          className="button-danger"
           onClick={onClearTransaction}
           disabled={!canClearTransaction || isProcessing}
-          style={{
-            background: "linear-gradient(90deg, #8f204f, #b8363b)",
-            boxShadow: "inset 0 0 0.6rem rgba(255, 116, 116, 0.35)",
-          }}
         >
           Clear Transaction
         </button>
@@ -98,17 +96,59 @@ function EmployeeActions({
   );
 }
 
-function OrderBreakdown({ tray, total, onAdd, onDecrease, onRemove, isRungUp }) {
+function ComboBuilder({ combos, onAddCombo }) {
+  return (
+    <div className="view-card employee-combo-card">
+      <div className="section-header">
+        <h3 className="card-title">Meal Combos</h3>
+        <span className="section-tag">Bundle Pricing</span>
+      </div>
+      <p className="view-note section-subtitle">
+        Add prebuilt meals with automatic bundle pricing.
+      </p>
+      {combos.length === 0 ? (
+        <p className="view-note view-note--compact">No combos configured.</p>
+      ) : (
+        <div className="employee-combo-list">
+          {combos.map((combo) => (
+            <button
+              key={combo.id}
+              type="button"
+              className="employee-combo-chip"
+              onClick={() => onAddCombo(combo.id)}
+              disabled={!combo.isInStock}
+            >
+              <span className="employee-combo-chip-title">
+                {combo.name}
+              </span>
+              <span className="employee-combo-chip-items">
+                {combo.itemNames.join(" + ")}
+              </span>
+              <strong>${combo.bundlePrice.toFixed(2)}</strong>
+              {combo.savings > 0 && (
+                <span className="employee-combo-chip-savings">
+                  Save ${combo.savings.toFixed(2)}
+                </span>
+              )}
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function OrderBreakdown({ tray, total, onIncrease, onDecrease, onRemove, isRungUp }) {
   return (
     <div className="view-card is-open employee-card-compact">
       <div className="section-header">
-        <h3 style={{ marginTop: 0, marginBottom: 0 }}>Order Breakdown</h3>
+        <h3 className="card-title">Order Breakdown</h3>
         <span className={`section-tag ${isRungUp ? "is-good" : ""}`}>
           {isRungUp ? "Rung Up" : "Pending"}
         </span>
       </div>
       {tray.length === 0 ? (
-        <p className="view-note" style={{ marginBottom: 0 }}>
+        <p className="view-note view-note--compact">
           No items added yet.
         </p>
       ) : (
@@ -117,12 +157,15 @@ function OrderBreakdown({ tray, total, onAdd, onDecrease, onRemove, isRungUp }) 
             <div key={item.id} className="employee-breakdown-row">
               <span title={item.name} className="employee-item-name">
                 {item.name}
+                {item.lineType === "combo" && (
+                  <span className="employee-line-meta">Combo</span>
+                )}
               </span>
               <button type="button" className="employee-qty-btn" onClick={() => onDecrease(item.id)}>
                 -
               </button>
               <span className="employee-qty-value">{item.qty}</span>
-              <button type="button" className="employee-qty-btn" onClick={() => onAdd(item.id)}>
+              <button type="button" className="employee-qty-btn" onClick={() => onIncrease(item.id)}>
                 +
               </button>
               <button type="button" className="employee-remove-btn" onClick={() => onRemove(item.id)}>
@@ -144,7 +187,7 @@ function OrderBreakdown({ tray, total, onAdd, onDecrease, onRemove, isRungUp }) 
 }
 
 function StealDefensePanel({ stealMinigame, onTap }) {
-  const [now, setNow] = useState(Date.now());
+  const [now, setNow] = useState(stealMinigame?.endsAt ?? 0);
   const msLeft = Math.max(0, (stealMinigame?.endsAt ?? 0) - now);
   const secondsLeft = (msLeft / 1000).toFixed(1);
   const customerScore = stealMinigame?.customerScore ?? 0;
@@ -171,7 +214,7 @@ function StealDefensePanel({ stealMinigame, onTap }) {
   return (
     <div className="view-card is-open">
       <div className="section-header">
-        <h3 style={{ marginTop: 0, marginBottom: 0 }}>Theft Defense</h3>
+        <h3 className="card-title">Theft Defense</h3>
         <span className="section-tag">Mash E</span>
       </div>
       <p className="view-note">Press E repeatedly to block theft.</p>
@@ -189,45 +232,52 @@ export default function EmployeeView() {
 
   return (
     <div className="view-shell view-shell--compact view-layout">
-      <h2 style={{ marginTop: 0, textAlign: "center" }}>
+      <h2 className="view-page-title">
         {state.activeStoreName} - {state.registerName}
       </h2>
 
       {state.session.phase === "employee" && (
         <div className="view-grid-two employee-top-grid">
-          <div className="view-card is-open employee-card-compact">
-            <div className="section-header">
-              <h3 style={{ marginTop: 0, marginBottom: 0 }}>Item Picker</h3>
-              <span className="section-tag">Menu</span>
+          <div className="employee-panel-stack">
+            <div className="view-card is-open employee-card-compact">
+              <div className="section-header">
+                <h3 className="card-title">Item Picker</h3>
+                <span className="section-tag">Menu</span>
+              </div>
+              <p className="view-note section-subtitle">
+                Select menu items to build the tray before ringing up.
+              </p>
+              <div className="employee-item-picker">
+                {state.customerItems.map((item) => {
+                  const remainingStock = state.remainingStockByItemId[item.id] ?? item.stock;
+                  const outOfStock = remainingStock <= 0;
+                  return (
+                    <button
+                      key={item.id}
+                      className="employee-item-chip"
+                      type="button"
+                      onClick={() => actions.onAddToTray(item.id)}
+                      disabled={outOfStock}
+                    >
+                      <span>{item.name}</span>
+                      <strong>${item.effectivePrice.toFixed(2)}</strong>
+                      <small>{remainingStock} left</small>
+                    </button>
+                  );
+                })}
+              </div>
             </div>
-            <p className="view-note section-subtitle">
-              Select menu items to build the tray before ringing up.
-            </p>
-            <div className="employee-item-picker">
-              {state.customerItems.map((item) => {
-                const qtyInTray =
-                  state.tray.find((trayItem) => trayItem.id === item.id)?.qty ?? 0;
-                const outOfStock = qtyInTray >= item.stock;
-                return (
-                  <button
-                    key={item.id}
-                    className="employee-item-chip"
-                    type="button"
-                    onClick={() => actions.onAddToTray(item.id)}
-                    disabled={outOfStock}
-                  >
-                    <span>{item.name}</span>
-                    <strong>${item.effectivePrice.toFixed(2)}</strong>
-                  </button>
-                );
-              })}
-            </div>
+
+            <ComboBuilder
+              combos={state.availableCombos}
+              onAddCombo={actions.onAddComboToTray}
+            />
           </div>
 
           <OrderBreakdown
             tray={state.tray}
             total={state.total}
-            onAdd={actions.onAddToTray}
+            onIncrease={actions.onIncreaseTrayLine}
             onDecrease={actions.onDecreaseTrayItem}
             onRemove={actions.onRemoveTrayItem}
             isRungUp={state.session.isRungUp}

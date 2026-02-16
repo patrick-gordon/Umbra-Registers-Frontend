@@ -1,3 +1,7 @@
+import {
+  NUI_ERROR_CODES,
+  normalizeNuiErrorCode,
+} from "../../shared/nuiErrorCodes";
 const hasWindow = typeof window !== "undefined";
 const DEFAULT_TIMEOUT_MS = 5000;
 
@@ -20,7 +24,10 @@ const getMockBridge = () => {
   return window.__NUI_MOCK__ ?? null;
 };
 
-export function normalizeNuiError(error, fallbackCode = "NUI_ERROR") {
+export function normalizeNuiError(
+  error,
+  fallbackCode = NUI_ERROR_CODES.NUI_ERROR,
+) {
   if (!error) {
     return { code: fallbackCode, message: "Unknown NUI error" };
   }
@@ -28,7 +35,7 @@ export function normalizeNuiError(error, fallbackCode = "NUI_ERROR") {
     return { code: fallbackCode, message: error };
   }
   return {
-    code: error.code ?? fallbackCode,
+    code: normalizeNuiErrorCode(error.code, fallbackCode),
     message: error.message ?? "Unknown NUI error",
   };
 }
@@ -44,7 +51,10 @@ export async function postNui(eventName, payload = {}, options = {}) {
         const data = await bridge.onPost(eventName, payload);
         return { ok: true, data, source: "mock" };
       } catch (error) {
-        return { ok: false, error: normalizeNuiError(error, "MOCK_ERROR") };
+        return {
+          ok: false,
+          error: normalizeNuiError(error, NUI_ERROR_CODES.MOCK_ERROR),
+        };
       }
     }
     return { ok: true, data: null, source: "mock" };
@@ -70,7 +80,7 @@ export async function postNui(eventName, payload = {}, options = {}) {
       return {
         ok: false,
         error: {
-          code: "HTTP_ERROR",
+          code: NUI_ERROR_CODES.HTTP_ERROR,
           message: `NUI callback failed (${response.status})`,
         },
       };
@@ -90,7 +100,7 @@ export async function postNui(eventName, payload = {}, options = {}) {
       ok: false,
       error: normalizeNuiError(
         isTimeout ? "NUI callback timeout" : error,
-        isTimeout ? "TIMEOUT" : "FETCH_ERROR",
+        isTimeout ? NUI_ERROR_CODES.TIMEOUT : NUI_ERROR_CODES.FETCH_ERROR,
       ),
     };
   } finally {

@@ -1,4 +1,4 @@
-import { useRegisterStore } from "../context/RegisterContext";
+import { useRegisterStore } from "../context/useRegisterStore";
 
 export default function AppControls() {
   const { state, actions } = useRegisterStore();
@@ -8,6 +8,7 @@ export default function AppControls() {
       <div className="app-view-tabs">
         {state.allowedViews.includes("employee") && (
           <button
+            type="button"
             onClick={() => actions.setView("employee")}
             className={state.view === "employee" ? "is-active" : ""}
           >
@@ -16,6 +17,7 @@ export default function AppControls() {
         )}
         {state.allowedViews.includes("customer") && (
           <button
+            type="button"
             onClick={() => actions.setView("customer")}
             className={state.view === "customer" ? "is-active" : ""}
           >
@@ -24,13 +26,16 @@ export default function AppControls() {
         )}
         {state.allowedViews.includes("manager") && (
           <button
+            type="button"
             onClick={() => actions.setView("manager")}
             className={state.view === "manager" ? "is-active" : ""}
           >
             Manager
           </button>
         )}
-        <button onClick={actions.closeUi}>Close Panel</button>
+        <button type="button" className="app-view-close-btn" onClick={actions.closeUi}>
+          Close Panel
+        </button>
       </div>
 
       {state.nuiPendingAction && (
@@ -46,21 +51,13 @@ export default function AppControls() {
       )}
 
       {state.nuiError && (
-        <div
-          style={{
-            marginBottom: 12,
-            padding: 8,
-            border: "1px solid var(--umbra-accent)",
-            borderRadius: 8,
-            background: "rgba(234, 80, 31, 0.15)",
-            display: "flex",
-            justifyContent: "space-between",
-            alignItems: "center",
-            gap: 8,
-          }}
-        >
-          <span>NUI Error: {state.nuiError}</span>
-          <button onClick={actions.clearNuiError}>Close Error</button>
+        <div className="app-status app-status--error" role="alert">
+          <span>
+            NUI Error: <strong>{state.nuiError}</strong>
+          </span>
+          <button type="button" className="app-status-action" onClick={actions.clearNuiError}>
+            Dismiss
+          </button>
         </div>
       )}
 
