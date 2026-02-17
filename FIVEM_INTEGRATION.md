@@ -393,7 +393,9 @@ Manager-configured discounts/promotions may include optional schedule fields:
 {
   "id": "d-happy-hour-1",
   "name": "Happy Hour Drinks",
-  "discountPrice": 2.5,
+  "discountType": "percentage",
+  "discountValue": 50,
+  "applyToAllItems": true,
   "promotionType": "happyHour",
   "startDate": "2026-02-16",
   "endDate": "2026-03-16",
@@ -406,6 +408,11 @@ Manager-configured discounts/promotions may include optional schedule fields:
 ```
 
 Rules:
+- `discountType` supports:
+  - `percentage` (`discountValue` is percent off, e.g. `50` = 50% off)
+  - `fixed` (`discountValue` is final fixed item price)
+- `applyToAllItems: true` applies discount to the entire order/catalog scope.
+- Legacy `discountPrice` is still accepted as fixed-price compatibility.
 - `weekdays` uses JS day index: `0=Sun ... 6=Sat`.
 - `startTime`/`endTime` are 24h `HH:mm` (supports overnight windows when end < start).
 - `eventTag` requires a matching value in `activeEventTags` / `eventTags` from backend.

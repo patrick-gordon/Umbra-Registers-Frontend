@@ -74,6 +74,20 @@
   min-width: 120px;
 }
 
+.mgr-discount-days {
+  display: grid;
+  gap: 0.18rem;
+  min-width: 185px;
+}
+
+.mgr-discount-days label {
+  margin: 0;
+  font-size: 0.68rem;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--umbra-text-dim);
+}
+
 .mgr-filter-row {
   display: flex;
   gap: 0.45rem;
@@ -416,11 +430,45 @@
   font-size: 0.88rem;
 }
 
+.mgr-discount-requirements {
+  margin: 0 0 0.45rem;
+  border: 1px solid color-mix(in srgb, var(--umbra-border-soft) 58%, transparent 42%);
+  border-radius: 9px;
+  background: color-mix(in srgb, var(--umbra-surface) 88%, #120c1f 12%);
+  padding: 0.42rem 0.48rem;
+  display: grid;
+  gap: 0.22rem;
+}
+
+.mgr-discount-requirements p {
+  margin: 0;
+  font-size: 0.76rem;
+  line-height: 1.28;
+  color: var(--umbra-text-muted);
+}
+
+.mgr-discount-requirements strong {
+  color: var(--umbra-text);
+}
+
+.mgr-discount-selection-note {
+  margin: 0.38rem 0 0;
+  font-size: 0.75rem;
+  color: var(--umbra-text-dim);
+}
+
 .mgr-checkbox-grid {
   margin-top: 0.45rem;
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 0.35rem;
+}
+
+.mgr-checkbox-grid--days {
+  border: 1px solid color-mix(in srgb, var(--umbra-border-soft) 58%, transparent 42%);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.02);
+  padding: 0.4rem;
 }
 
 .mgr-checkbox-grid label {

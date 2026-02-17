@@ -151,6 +151,34 @@ const calcComboBasePrice = (combo, catalogById) =>
     0,
   );
 
+const calcDiscountedComboPrice = ({
+  combo,
+  comboBasePrice,
+  sessionDiscounts,
+  discountContext,
+  catalogMap,
+}) => {
+  if (!combo || combo.bundlePrice <= 0) return combo?.bundlePrice ?? 0;
+  if (!Array.isArray(combo.itemIds) || combo.itemIds.length === 0) {
+    return combo.bundlePrice;
+  }
+  if (!Number.isFinite(comboBasePrice) || comboBasePrice <= 0) {
+    return combo.bundlePrice;
+  }
+  if (!Array.isArray(sessionDiscounts) || sessionDiscounts.length === 0) {
+    return combo.bundlePrice;
+  }
+
+  const discountedCatalogTotal = combo.itemIds.reduce((sum, itemId) => {
+    const item = catalogMap.get(itemId);
+    if (!item) return sum;
+    return sum + effectivePrice(itemId, item.price, sessionDiscounts, discountContext);
+  }, 0);
+
+  const bundleRatio = combo.bundlePrice / comboBasePrice;
+  return Math.max(0, discountedCatalogTotal * bundleRatio);
+};
+
 const buildStockUsageFromTray = (trayLines, comboById) =>
   trayLines.reduce((usage, trayItem) => {
     const qty = Number(trayItem?.qty) || 0;
@@ -248,13 +276,17 @@ const createInitialState = () => ({
   registerStatsByRegister: { "store-1-register-1": mkRegisterStats() },
   abuseSignalsByRegister: { "store-1-register-1": mkAbuseSignal() },
   receiptsByRegister: {},
+  minigameResultsByRegister: {},
   managerCategoryFilter: "All Categories",
   newStoreName: "",
   newRegisterName: "",
   newItem: { name: "", price: "", stock: "", sortOrder: "", category: "" },
   newDiscount: {
     name: "",
-    discountPrice: "",
+    discountType: "percentage",
+    discountValue: "",
+    applyToAllItems: true,
+    isForever: true,
     promotionType: "standard",
     startDate: "",
     endDate: "",
@@ -382,12 +414,20 @@ export function RegisterProvider({ children }) {
   const customerItems = useMemo(
     () =>
       sortedCatalog.map((item) => {
-        const price = session.isRungUp
+        const shouldShowDiscountedPrice =
+          session.isRungUp || session.selectedDiscountIds.length > 0;
+        const price = shouldShowDiscountedPrice
           ? effectivePrice(item.id, item.price, selectedDiscounts, discountActivityContext)
           : item.price;
         return { ...item, effectivePrice: price, hasDiscount: price < item.price };
       }),
-    [sortedCatalog, session.isRungUp, selectedDiscounts, discountActivityContext],
+    [
+      sortedCatalog,
+      session.isRungUp,
+      session.selectedDiscountIds.length,
+      selectedDiscounts,
+      discountActivityContext,
+    ],
   );
 
   const availableCombos = useMemo(
@@ -436,7 +476,8 @@ export function RegisterProvider({ children }) {
     return discounts.filter(
       (discount) =>
         isDiscountActive(discount, discountActivityContext) &&
-        discount.itemIds.some((itemId) => trayItemIds.has(itemId)),
+        (discount.applyToAllItems ||
+          discount.itemIds.some((itemId) => trayItemIds.has(itemId))),
     );
   }, [discounts, stockUsageByItemId, discountActivityContext]);
 
@@ -561,6 +602,23 @@ export function RegisterProvider({ children }) {
     setStateValue("receiptsByRegister", nextReceipts);
   };
 
+  const setMinigameResultForRegister = (registerId, result) => {
+    if (!registerId) return;
+    const currentResults = appState.minigameResultsByRegister ?? EMPTY_OBJECT;
+    setStateValue("minigameResultsByRegister", {
+      ...currentResults,
+      [registerId]: result,
+    });
+  };
+
+  const clearMinigameResultForRegister = (registerId) => {
+    const currentResults = appState.minigameResultsByRegister ?? EMPTY_OBJECT;
+    if (!currentResults[registerId]) return;
+    const nextResults = { ...currentResults };
+    delete nextResults[registerId];
+    setStateValue("minigameResultsByRegister", nextResults);
+  };
+
   const completeCustomerPaid = (
     registerId,
     amount,
@@ -594,6 +652,7 @@ export function RegisterProvider({ children }) {
         [registerId]: receipt,
       },
     });
+    clearMinigameResultForRegister(registerId);
     setRegisterStats(registerId, (current) => ({
       ...current,
       totalSales: current.totalSales + amount,
@@ -647,6 +706,12 @@ export function RegisterProvider({ children }) {
     const employeeScore = currentSession.stealMinigame.employeeScore ?? 0;
     const customerWins = customerScore > employeeScore;
     const winner = customerWins ? "customer" : "employee";
+    setMinigameResultForRegister(registerId, {
+      winner,
+      customerScore,
+      employeeScore,
+      resolvedAt: new Date().toISOString(),
+    });
     const itemsInTransaction = countItemsInTray(
       appState.traysByRegister[registerId] ?? EMPTY_ARRAY,
     );
@@ -736,6 +801,16 @@ export function RegisterProvider({ children }) {
         combo.itemIds.forEach((itemId) => {
           remainingStock[itemId] = Math.max(0, (remainingStock[itemId] ?? 0) - qty);
         });
+        const comboBasePrice = calcComboBasePrice(combo, catalogMap);
+        const comboUnitPrice = useDiscountPricing
+          ? calcDiscountedComboPrice({
+              combo,
+              comboBasePrice,
+              sessionDiscounts,
+              discountContext,
+              catalogMap,
+            })
+          : combo.bundlePrice;
 
         addLine({
           id: buildComboLineId(combo.id),
@@ -743,8 +818,9 @@ export function RegisterProvider({ children }) {
           comboId: combo.id,
           itemIds: combo.itemIds,
           name: combo.name,
-          basePrice: calcComboBasePrice(combo, catalogMap),
-          unitPrice: combo.bundlePrice,
+          basePrice: combo.bundlePrice,
+          comboBasePrice,
+          unitPrice: comboUnitPrice,
           qty,
         });
         return;
@@ -878,6 +954,7 @@ export function RegisterProvider({ children }) {
     (appState.currentRole === "manager" || appState.currentRole === "employee");
 
   const markTrayDirty = (registerId) => {
+    clearMinigameResultForRegister(registerId);
     setSession(registerId, (currentSession) => ({
       ...currentSession,
       isRungUp: false,
@@ -886,11 +963,25 @@ export function RegisterProvider({ children }) {
   };
 
   const setActiveRegisterTray = (nextTray) => {
+    const registerId = appState.activeRegisterId;
+    const currentSession = appState.sessionsByRegister[registerId] ?? mkSession();
+    const hasSelectedDiscounts =
+      Array.isArray(currentSession.selectedDiscountIds) &&
+      currentSession.selectedDiscountIds.length > 0;
+    const normalizedTray = buildNormalizedTrayForRegister({
+      trayLines: nextTray,
+      currentSession,
+      catalogItems: catalog,
+      comboItems: combos,
+      discountItems: discounts,
+      discountContext: discountActivityContext,
+      useDiscountPricing: hasSelectedDiscounts,
+    });
     setStateValue("traysByRegister", {
       ...appState.traysByRegister,
-      [appState.activeRegisterId]: nextTray,
+      [registerId]: normalizedTray,
     });
-    markTrayDirty(appState.activeRegisterId);
+    markTrayDirty(registerId);
   };
 
   const canAddComboToTray = (combo, currentTray) => {
@@ -955,8 +1046,34 @@ export function RegisterProvider({ children }) {
     onCategoryFilterChange: (value) => setStateValue("managerCategoryFilter", value),
     onNewItemChange: (field, value) =>
       setStateValue("newItem", { ...appState.newItem, [field]: value }),
-    onNewDiscountChange: (field, value) =>
-      setStateValue("newDiscount", { ...appState.newDiscount, [field]: value }),
+    onNewDiscountChange: (field, value) => {
+      if (field === "discountPrice") {
+        setStateValue("newDiscount", {
+          ...appState.newDiscount,
+          discountType: "fixed",
+          discountValue: value,
+        });
+        return;
+      }
+      if (field === "isForever") {
+        const isForever = Boolean(value);
+        setStateValue("newDiscount", {
+          ...appState.newDiscount,
+          isForever,
+          ...(isForever ? { startDate: "", endDate: "" } : {}),
+        });
+        return;
+      }
+      if ((field === "startDate" || field === "endDate") && value) {
+        setStateValue("newDiscount", {
+          ...appState.newDiscount,
+          [field]: value,
+          isForever: false,
+        });
+        return;
+      }
+      setStateValue("newDiscount", { ...appState.newDiscount, [field]: value });
+    },
     onNewComboChange: (field, value) =>
       setStateValue("newCombo", { ...appState.newCombo, [field]: value }),
     onSelectRegister: (value) => setStateValue("activeRegisterId", value),
@@ -1227,6 +1344,7 @@ export function RegisterProvider({ children }) {
       if (session.phase === "stealMinigame" || session.isProcessing) return;
       const nextReceipts = { ...appState.receiptsByRegister };
       delete nextReceipts[appState.activeRegisterId];
+      clearMinigameResultForRegister(appState.activeRegisterId);
       patchState({
         traysByRegister: { ...appState.traysByRegister, [appState.activeRegisterId]: [] },
         sessionsByRegister: {
@@ -1242,6 +1360,7 @@ export function RegisterProvider({ children }) {
       if (session.isProcessing) return;
       const registerId = appState.activeRegisterId;
       clearReceiptForRegister(registerId);
+      clearMinigameResultForRegister(registerId);
       const tierLevel = registerTierByRegister[registerId] ?? 1;
       const tier = getRegisterTier(tierLevel);
       const processingMs = tier.processingMs;
@@ -1251,7 +1370,8 @@ export function RegisterProvider({ children }) {
             .filter(
               (discount) =>
                 isDiscountActive(discount, discountActivityContext) &&
-                discount.itemIds.some((itemId) => trayItemIds.has(itemId)),
+                (discount.applyToAllItems ||
+                  discount.itemIds.some((itemId) => trayItemIds.has(itemId))),
             )
             .map((discount) => discount.id)
         : [];
@@ -1334,17 +1454,50 @@ export function RegisterProvider({ children }) {
       }, processingMs);
     },
 
+    onDismissProcessingError: () => {
+      if (!canUseEmployeeActions) return;
+      setSession(appState.activeRegisterId, (currentSession) => ({
+        ...currentSession,
+        processingError: "",
+      }));
+    },
+
+    onDismissMinigameResult: () => {
+      clearMinigameResultForRegister(appState.activeRegisterId);
+    },
+
     onToggleSessionDiscount: (id) => {
       if (!canUseEmployeeActions || session.phase !== "employee" || session.isProcessing)
         return;
-      setSession(appState.activeRegisterId, (currentSession) => ({
-        ...currentSession,
+      const registerId = appState.activeRegisterId;
+      const nextSelectedDiscountIds = session.selectedDiscountIds.includes(id)
+        ? session.selectedDiscountIds.filter((discountId) => discountId !== id)
+        : [...session.selectedDiscountIds, id];
+      const nextSession = {
+        ...session,
         isRungUp: false,
         processingError: "",
-        selectedDiscountIds: currentSession.selectedDiscountIds.includes(id)
-          ? currentSession.selectedDiscountIds.filter((discountId) => discountId !== id)
-          : [...currentSession.selectedDiscountIds, id],
-      }));
+        selectedDiscountIds: nextSelectedDiscountIds,
+      };
+      const nextTray = buildNormalizedTrayForRegister({
+        trayLines: appState.traysByRegister[registerId] ?? EMPTY_ARRAY,
+        currentSession: nextSession,
+        catalogItems: catalog,
+        comboItems: combos,
+        discountItems: discounts,
+        discountContext: discountActivityContext,
+        useDiscountPricing: nextSelectedDiscountIds.length > 0,
+      });
+      patchState({
+        sessionsByRegister: {
+          ...appState.sessionsByRegister,
+          [registerId]: nextSession,
+        },
+        traysByRegister: {
+          ...appState.traysByRegister,
+          [registerId]: nextTray,
+        },
+      });
     },
 
     // Locks register into customer phase. Customer UI can then pay or steal.
@@ -1450,7 +1603,7 @@ export function RegisterProvider({ children }) {
       });
     },
 
-    onStealMinigameTap: () => {
+    onStealMinigameTap: (tapSide) => {
       if (session.phase !== "stealMinigame" || !session.stealMinigame?.active) return;
       const registerId = appState.activeRegisterId;
       if (Date.now() >= session.stealMinigame.endsAt) {
@@ -1458,17 +1611,28 @@ export function RegisterProvider({ children }) {
         return;
       }
 
-      const isCustomer = appState.currentRole === "customer";
-      const isEmployeeSide =
-        appState.currentRole === "employee" || appState.currentRole === "manager";
-      if (!isCustomer && !isEmployeeSide) return;
+      const explicitSide =
+        tapSide === "customer" || tapSide === "employee" ? tapSide : "";
+      const fallbackSide =
+        appState.view === "customer"
+          ? "customer"
+          : appState.view === "employee" || appState.view === "manager"
+            ? "employee"
+            : appState.currentRole === "customer"
+              ? "customer"
+              : appState.currentRole === "employee" || appState.currentRole === "manager"
+                ? "employee"
+                : "";
+      const scoringSide = explicitSide || fallbackSide;
+      if (!scoringSide) return;
+      const isCustomer = scoringSide === "customer";
 
       setSession(registerId, (sessionState) => ({
         ...sessionState,
         stealMinigame: {
           ...sessionState.stealMinigame,
           customerScore: sessionState.stealMinigame.customerScore + (isCustomer ? 1 : 0),
-          employeeScore: sessionState.stealMinigame.employeeScore + (isEmployeeSide ? 1 : 0),
+          employeeScore: sessionState.stealMinigame.employeeScore + (isCustomer ? 0 : 1),
         },
       }));
     },
@@ -1664,8 +1828,12 @@ export function RegisterProvider({ children }) {
     onAddDiscount: () => {
       if (!isManager) return;
       const name = appState.newDiscount.name.trim();
-      const discountPrice = Number(appState.newDiscount.discountPrice);
+      const discountType =
+        appState.newDiscount.discountType === "fixed" ? "fixed" : "percentage";
+      const discountValue = Number(appState.newDiscount.discountValue);
       const promotionType = appState.newDiscount.promotionType || "standard";
+      const applyToAllItems = Boolean(appState.newDiscount.applyToAllItems);
+      const isForever = Boolean(appState.newDiscount.isForever);
       const eventTag = (appState.newDiscount.eventTag ?? "").trim();
       const weekdays = [...new Set(appState.newDiscount.weekdays ?? EMPTY_ARRAY)]
         .map((day) => Number(day))
@@ -1673,12 +1841,14 @@ export function RegisterProvider({ children }) {
         .sort();
       if (
         !name ||
-        Number.isNaN(discountPrice) ||
-        discountPrice < 0 ||
-        !appState.newDiscount.itemIds.length
+        Number.isNaN(discountValue) ||
+        (!applyToAllItems && !appState.newDiscount.itemIds.length)
       ) {
         return;
       }
+      if (discountType === "percentage" && (discountValue <= 0 || discountValue > 100))
+        return;
+      if (discountType === "fixed" && discountValue < 0) return;
       if (
         appState.newDiscount.startDate &&
         appState.newDiscount.endDate &&
@@ -1700,10 +1870,16 @@ export function RegisterProvider({ children }) {
         {
           id,
           name,
-          discountPrice,
+          discountType,
+          discountValue,
+          ...(discountType === "fixed"
+            ? { discountPrice: discountValue }
+            : { discountPercent: discountValue }),
+          applyToAllItems,
+          isForever,
           promotionType,
-          startDate: appState.newDiscount.startDate,
-          endDate: appState.newDiscount.endDate,
+          startDate: isForever ? "" : appState.newDiscount.startDate,
+          endDate: isForever ? "" : appState.newDiscount.endDate,
           startTime: appState.newDiscount.startTime,
           endTime: appState.newDiscount.endTime,
           weekdays,
@@ -1714,7 +1890,10 @@ export function RegisterProvider({ children }) {
       setActiveStore((store) => ({ ...store, discounts: nextDiscounts }));
       setStateValue("newDiscount", {
         name: "",
-        discountPrice: "",
+        discountType: "percentage",
+        discountValue: "",
+        applyToAllItems: true,
+        isForever: true,
         promotionType: "standard",
         startDate: "",
         endDate: "",
@@ -1732,18 +1911,52 @@ export function RegisterProvider({ children }) {
       const nextDiscounts = discounts.map((discount) => {
         if (discount.id !== id) return discount;
         if (field === "name") return { ...discount, name: raw };
-        if (field === "discountPrice") {
+        if (field === "discountType") {
+          const nextType = raw === "fixed" ? "fixed" : "percentage";
+          return { ...discount, discountType: nextType };
+        }
+        if (field === "applyToAllItems") {
+          return { ...discount, applyToAllItems: Boolean(raw) };
+        }
+        if (field === "isForever") {
+          const isForever = Boolean(raw);
+          return {
+            ...discount,
+            isForever,
+            ...(isForever ? { startDate: "", endDate: "" } : {}),
+          };
+        }
+        if (field === "discountValue" || field === "discountPrice") {
           const value = Number(raw);
-          return Number.isNaN(value) || value < 0
-            ? discount
-            : { ...discount, discountPrice: value };
+          if (Number.isNaN(value)) return discount;
+          const discountType =
+            discount.discountType === "fixed" ? "fixed" : "percentage";
+          if (discountType === "percentage" && (value <= 0 || value > 100)) return discount;
+          if (discountType === "fixed" && value < 0) return discount;
+          return {
+            ...discount,
+            discountValue: value,
+            ...(discountType === "fixed"
+              ? { discountPrice: value }
+              : { discountPercent: value }),
+          };
         }
         if (field === "promotionType") return { ...discount, promotionType: raw };
-        if (field === "startDate") return { ...discount, startDate: raw };
-        if (field === "endDate") return { ...discount, endDate: raw };
+        if (field === "startDate") {
+          return { ...discount, startDate: raw, isForever: raw ? false : discount.isForever };
+        }
+        if (field === "endDate") {
+          return { ...discount, endDate: raw, isForever: raw ? false : discount.isForever };
+        }
         if (field === "startTime") return { ...discount, startTime: raw };
         if (field === "endTime") return { ...discount, endTime: raw };
         if (field === "eventTag") return { ...discount, eventTag: raw };
+        if (field === "weekdays") {
+          const weekdays = [...new Set((Array.isArray(raw) ? raw : []).map(Number))]
+            .filter((day) => Number.isInteger(day) && day >= 0 && day <= 6)
+            .sort((a, b) => a - b);
+          return { ...discount, weekdays };
+        }
         return discount;
       });
       setActiveStore((store) => ({ ...store, discounts: nextDiscounts }));
@@ -1873,6 +2086,9 @@ export function RegisterProvider({ children }) {
           if (payload.traysByRegister) safe.traysByRegister = payload.traysByRegister;
           if (payload.sessionsByRegister) safe.sessionsByRegister = payload.sessionsByRegister;
           if (payload.receiptsByRegister) safe.receiptsByRegister = payload.receiptsByRegister;
+          if (payload.minigameResultsByRegister) {
+            safe.minigameResultsByRegister = payload.minigameResultsByRegister;
+          }
           if (payload.registerTierByRegister) {
             safe.registerTierByRegister = payload.registerTierByRegister;
           }
@@ -1960,6 +2176,9 @@ export function RegisterProvider({ children }) {
     businessInteractions,
     session,
     customerReceipt: appState.receiptsByRegister[appState.activeRegisterId] ?? null,
+    minigameResult:
+      (appState.minigameResultsByRegister ?? EMPTY_OBJECT)[appState.activeRegisterId] ??
+      null,
     tray,
     customerItems,
     combos,

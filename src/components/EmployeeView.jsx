@@ -1,5 +1,78 @@
 import { useEffect, useState } from "react";
+import MinigameResultModal from "./MinigameResultModal";
 import { useRegisterStore } from "../context/useRegisterStore";
+
+function ProcessingIssueModal({
+  message,
+  onRetry,
+  onDismiss,
+  canRetry,
+  isRetrying,
+}) {
+  const normalizedMessage = String(message ?? "");
+  const isJamIssue = normalizedMessage.toLowerCase().includes("jam");
+  const title = isJamIssue ? "Register Jam Detected" : "Ring Up Interrupted";
+  const hint = isJamIssue
+    ? "Clear the scanner path, then press Ring Up to try again."
+    : "Please review the order and try again.";
+
+  useEffect(() => {
+    const onKeyDown = (event) => {
+      if (event.key !== "Escape") return;
+      onDismiss();
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [onDismiss]);
+
+  const onBackdropClick = (event) => {
+    if (event.target !== event.currentTarget) return;
+    onDismiss();
+  };
+
+  return (
+    <div
+      className="employee-processing-overlay"
+      role="presentation"
+      onClick={onBackdropClick}
+    >
+      <div
+        className="employee-processing-modal"
+        role="alertdialog"
+        aria-live="assertive"
+        aria-label={title}
+      >
+        <div className="employee-processing-modal-head">
+          <div className="employee-processing-modal-icon" aria-hidden="true">
+            !
+          </div>
+          <button type="button" onClick={onDismiss} className="employee-processing-close">
+            Dismiss
+          </button>
+        </div>
+        <div className="employee-processing-modal-content">
+          <p className="employee-processing-modal-title">{title}</p>
+          <p className="employee-processing-modal-message">{normalizedMessage}</p>
+          <p className="employee-processing-modal-hint">{hint}</p>
+        </div>
+        <div className="employee-processing-modal-actions">
+          <button
+            type="button"
+            className="employee-processing-retry"
+            onClick={onRetry}
+            disabled={!canRetry || isRetrying}
+          >
+            Retry Ring Up
+          </button>
+          <button type="button" onClick={onDismiss}>
+            Close
+          </button>
+        </div>
+        <div className="employee-processing-modal-sheen" aria-hidden="true" />
+      </div>
+    </div>
+  );
+}
 
 function EmployeeActions({
   availableSessionDiscounts,
@@ -14,7 +87,6 @@ function EmployeeActions({
   isProcessing,
   processingProgress,
   activeRegisterTier,
-  processingError,
 }) {
   const isTierOne = activeRegisterTier?.level === 1;
   const perks = [];
@@ -27,6 +99,27 @@ function EmployeeActions({
       `Auto Block ${(activeRegisterTier.instantStealBlockChance * 100).toFixed(0)}%`,
     );
   }
+  const describeDiscount = (discount) => {
+    const discountType =
+      discount.discountType === "fixed" || discount.discountType === "percentage"
+        ? discount.discountType
+        : Number.isFinite(Number(discount.discountPercent))
+          ? "percentage"
+          : "fixed";
+    const rawValue = Number(
+      discount.discountValue ??
+      (discountType === "percentage" ? discount.discountPercent : discount.discountPrice),
+    );
+    const safeValue = Number.isFinite(rawValue) ? rawValue : 0;
+    const valueLabel =
+      discountType === "percentage"
+        ? `${safeValue.toFixed(0)}% off`
+        : `$${safeValue.toFixed(2)} fixed`;
+    const scopeLabel = discount.applyToAllItems
+      ? "All items"
+      : `${discount.itemIds?.length ?? 0} item scope`;
+    return { valueLabel, scopeLabel };
+  };
 
   return (
     <div className="view-card is-open employee-actions-card">
@@ -58,26 +151,44 @@ function EmployeeActions({
           </div>
         </div>
       )}
-      {processingError && (
-        <p className="employee-processing-error">{processingError}</p>
-      )}
       <div className="employee-discount-list employee-actions-discounts">
         {availableSessionDiscounts.length === 0 && (
           <span className="view-note employee-actions-empty">No available discounts.</span>
         )}
-        {availableSessionDiscounts.map((discount) => (
-          <label key={discount.id} className="employee-discount-chip">
-            <input
-              type="checkbox"
-              checked={selectedDiscountIds.includes(discount.id)}
-              onChange={() => onToggleDiscount(discount.id)}
-            />
-            {discount.name}
-          </label>
-        ))}
+        {availableSessionDiscounts.map((discount) => {
+          const isSelected = selectedDiscountIds.includes(discount.id);
+          const { valueLabel, scopeLabel } = describeDiscount(discount);
+          return (
+            <button
+              key={discount.id}
+              type="button"
+              className={`employee-discount-tile ${isSelected ? "is-selected" : ""}`}
+              onClick={() => onToggleDiscount(discount.id)}
+              aria-pressed={isSelected}
+              disabled={isProcessing}
+            >
+              <span className="employee-discount-title-row">
+                <span className="employee-discount-name" title={discount.name}>
+                  {discount.name}
+                </span>
+                <span className={`employee-discount-state ${isSelected ? "is-selected" : ""}`}>
+                  {isSelected ? "Selected" : "Select"}
+                </span>
+              </span>
+              <span className="employee-discount-meta">
+                <strong>{valueLabel}</strong>
+                <span>{scopeLabel}</span>
+              </span>
+            </button>
+          );
+        })}
       </div>
       <div className="employee-action-row employee-action-row--compact">
-        <button type="button" onClick={onRingUp} disabled={!hasTrayItems || isProcessing}>
+        <button
+          type="button"
+          onClick={onRingUp}
+          disabled={!hasTrayItems || isProcessing || canConfirm}
+        >
           Ring Up
         </button>
         <button type="button" onClick={onConfirm} disabled={!canConfirm || isProcessing}>
@@ -153,29 +264,47 @@ function OrderBreakdown({ tray, total, onIncrease, onDecrease, onRemove, isRungU
         </p>
       ) : (
         <div className="employee-breakdown-list">
-          {tray.map((item) => (
-            <div key={item.id} className="employee-breakdown-row">
-              <span title={item.name} className="employee-item-name">
-                {item.name}
-                {item.lineType === "combo" && (
-                  <span className="employee-line-meta">Combo</span>
-                )}
-              </span>
-              <button type="button" className="employee-qty-btn" onClick={() => onDecrease(item.id)}>
-                -
-              </button>
-              <span className="employee-qty-value">{item.qty}</span>
-              <button type="button" className="employee-qty-btn" onClick={() => onIncrease(item.id)}>
-                +
-              </button>
-              <button type="button" className="employee-remove-btn" onClick={() => onRemove(item.id)}>
-                Remove
-              </button>
-              <strong className="employee-line-total">
-                ${(item.unitPrice * item.qty).toFixed(2)}
-              </strong>
-            </div>
-          ))}
+          {tray.map((item) => {
+            const baseUnitPrice = Number(item.basePrice ?? item.unitPrice);
+            const unitPrice = Number(item.unitPrice ?? 0);
+            const hasAppliedDiscount =
+              Number.isFinite(baseUnitPrice) &&
+              baseUnitPrice > unitPrice;
+
+            return (
+              <div key={item.id} className="employee-breakdown-row">
+                <div className="employee-item-main">
+                  <span title={item.name} className="employee-item-name">
+                    {item.name}
+                  </span>
+                  <div className="employee-line-flags">
+                    {item.lineType === "combo" && (
+                      <span className="employee-line-meta">Combo</span>
+                    )}
+                    {hasAppliedDiscount && (
+                      <span className="employee-line-discount">
+                        Discounted ${baseUnitPrice.toFixed(2)}{" -> "}$
+                        {unitPrice.toFixed(2)} each
+                      </span>
+                    )}
+                  </div>
+                </div>
+                <button type="button" className="employee-qty-btn" onClick={() => onDecrease(item.id)}>
+                  -
+                </button>
+                <span className="employee-qty-value">{item.qty}</span>
+                <button type="button" className="employee-qty-btn" onClick={() => onIncrease(item.id)}>
+                  +
+                </button>
+                <button type="button" className="employee-remove-btn" onClick={() => onRemove(item.id)}>
+                  Remove
+                </button>
+                <strong className="employee-line-total">
+                  ${(unitPrice * item.qty).toFixed(2)}
+                </strong>
+              </div>
+            );
+          })}
           <div className="employee-breakdown-footer">
             <span className="view-note">{isRungUp ? "Rung up" : "Not rung up"}</span>
             <strong>Total: ${total.toFixed(2)}</strong>
@@ -200,7 +329,7 @@ function StealDefensePanel({ stealMinigame, onTap }) {
     const onKeyDown = (event) => {
       if (event.repeat) return;
       if (event.code !== "KeyE" && event.key.toLowerCase() !== "e") return;
-      onTap();
+      onTap("employee");
     };
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
@@ -229,6 +358,8 @@ function StealDefensePanel({ stealMinigame, onTap }) {
 
 export default function EmployeeView() {
   const { state, actions } = useRegisterStore();
+  const showProcessingIssue =
+    state.session.phase === "employee" && Boolean(state.session.processingError);
 
   return (
     <div className="view-shell view-shell--compact view-layout">
@@ -309,7 +440,25 @@ export default function EmployeeView() {
           isProcessing={state.session.isProcessing}
           processingProgress={state.session.processingProgress}
           activeRegisterTier={state.activeRegisterTier}
-          processingError={state.session.processingError}
+        />
+      )}
+      {showProcessingIssue && (
+        <ProcessingIssueModal
+          message={state.session.processingError}
+          onRetry={actions.onRingUp}
+          onDismiss={actions.onDismissProcessingError}
+          canRetry={
+            state.tray.length > 0 &&
+            !state.session.isProcessing &&
+            !state.session.isRungUp
+          }
+          isRetrying={state.session.isProcessing}
+        />
+      )}
+      {state.minigameResult && (
+        <MinigameResultModal
+          result={state.minigameResult}
+          onDismiss={actions.onDismissMinigameResult}
         />
       )}
     </div>

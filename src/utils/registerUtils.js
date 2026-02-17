@@ -83,13 +83,16 @@ const normalizeWeekdays = (weekdays) =>
 
 export const isDiscountActive = (discount, context = {}) => {
   const now = context.now instanceof Date ? context.now : new Date();
-  const start = discount.startDate
-    ? new Date(`${discount.startDate}T00:00:00`)
-    : null;
-  const end = discount.endDate ? new Date(`${discount.endDate}T23:59:59`) : null;
+  const isForever = Boolean(discount.isForever);
+  if (!isForever) {
+    const start = discount.startDate
+      ? new Date(`${discount.startDate}T00:00:00`)
+      : null;
+    const end = discount.endDate ? new Date(`${discount.endDate}T23:59:59`) : null;
 
-  if (start && now < start) return false;
-  if (end && now > end) return false;
+    if (start && now < start) return false;
+    if (end && now > end) return false;
+  }
 
   const weekdays = normalizeWeekdays(discount.weekdays);
   if (weekdays.length > 0 && !weekdays.includes(now.getDay())) return false;
@@ -114,14 +117,36 @@ export const isDiscountActive = (discount, context = {}) => {
 };
 
 export const effectivePrice = (itemId, basePrice, discounts, context = {}) => {
+  const resolveDiscountedPrice = (discount) => {
+    const discountType =
+      discount.discountType === "percentage" || discount.discountType === "fixed"
+        ? discount.discountType
+        : Number.isFinite(Number(discount.discountPercent))
+          ? "percentage"
+          : "fixed";
+
+    if (discountType === "percentage") {
+      const percentRaw = Number(
+        discount.discountValue ?? discount.discountPercent,
+      );
+      if (!Number.isFinite(percentRaw) || percentRaw <= 0) return null;
+      const percent = Math.min(100, percentRaw);
+      return Math.max(0, basePrice * (1 - percent / 100));
+    }
+
+    const fixedPriceRaw = Number(discount.discountValue ?? discount.discountPrice);
+    if (!Number.isFinite(fixedPriceRaw) || fixedPriceRaw < 0) return null;
+    return Math.min(basePrice, fixedPriceRaw);
+  };
+
   const prices = discounts
     .filter(
       (discount) =>
-        discount.itemIds.includes(itemId) &&
-        isDiscountActive(discount, context) &&
-        discount.discountPrice >= 0,
+        (discount.applyToAllItems || discount.itemIds.includes(itemId)) &&
+        isDiscountActive(discount, context),
     )
-    .map((discount) => discount.discountPrice);
+    .map(resolveDiscountedPrice)
+    .filter((price) => Number.isFinite(price));
 
   return prices.length ? Math.min(...prices) : basePrice;
 };

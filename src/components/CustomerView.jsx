@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import MinigameResultModal from "./MinigameResultModal";
 import { useRegisterStore } from "../context/useRegisterStore";
 
 function CustomerActions({ tray, total, onPay, onSteal, canSteal }) {
@@ -17,14 +18,28 @@ function CustomerActions({ tray, total, onPay, onSteal, canSteal }) {
           <h4>Order Items</h4>
           {tray.length > 0 ? (
             <div className="customer-order-list">
-              {tray.map((item) => (
-                <div key={item.id} className="customer-order-row">
-                  <span className="customer-order-name" title={item.name}>
-                    {item.name} x{item.qty}
-                  </span>
-                  <strong>${(item.unitPrice * item.qty).toFixed(2)}</strong>
-                </div>
-              ))}
+              {tray.map((item) => {
+                const baseUnitPrice = Number(item.basePrice ?? item.unitPrice);
+                const unitPrice = Number(item.unitPrice ?? 0);
+                const hasAppliedDiscount = baseUnitPrice > unitPrice;
+
+                return (
+                  <div key={item.id} className="customer-order-row">
+                    <div className="customer-order-main">
+                      <span className="customer-order-name" title={item.name}>
+                        {item.name} x{item.qty}
+                      </span>
+                      {hasAppliedDiscount && (
+                        <span className="customer-order-discount">
+                          Discounted ${baseUnitPrice.toFixed(2)}{" -> "}$
+                          {unitPrice.toFixed(2)} each
+                        </span>
+                      )}
+                    </div>
+                    <strong>${(unitPrice * item.qty).toFixed(2)}</strong>
+                  </div>
+                );
+              })}
             </div>
           ) : (
             <p className="view-note">No items on this order yet.</p>
@@ -67,7 +82,7 @@ function StealMinigame({ stealMinigame, onTap }) {
     const onKeyDown = (event) => {
       if (event.repeat) return;
       if (event.code !== "KeyE" && event.key.toLowerCase() !== "e") return;
-      onTap();
+      onTap("customer");
     };
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
@@ -197,6 +212,12 @@ export default function CustomerView() {
             </p>
           </div>
         </div>
+      )}
+      {state.minigameResult && (
+        <MinigameResultModal
+          result={state.minigameResult}
+          onDismiss={actions.onDismissMinigameResult}
+        />
       )}
     </div>
   );

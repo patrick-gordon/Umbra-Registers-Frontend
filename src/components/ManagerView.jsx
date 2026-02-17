@@ -83,6 +83,35 @@ const WEEKDAY_OPTIONS = [
   { value: 6, label: "Sat" },
 ];
 
+const WEEKDAY_SET = Object.freeze([1, 2, 3, 4, 5]);
+const WEEKEND_SET = Object.freeze([0, 6]);
+
+function normalizeWeekdayList(days) {
+  return [...new Set((Array.isArray(days) ? days : []).map(Number))]
+    .filter((day) => Number.isInteger(day) && day >= 0 && day <= 6)
+    .sort((a, b) => a - b);
+}
+
+function areWeekdayListsEqual(left, right) {
+  if (left.length !== right.length) return false;
+  return left.every((value, index) => value === right[index]);
+}
+
+function resolveWeekdayPreset(days) {
+  const normalized = normalizeWeekdayList(days);
+  if (normalized.length === 0) return "everyday";
+  if (areWeekdayListsEqual(normalized, WEEKDAY_SET)) return "weekdays";
+  if (areWeekdayListsEqual(normalized, WEEKEND_SET)) return "weekends";
+  return "custom";
+}
+
+function weekdaysFromPreset(preset) {
+  if (preset === "weekdays") return [...WEEKDAY_SET];
+  if (preset === "weekends") return [...WEEKEND_SET];
+  if (preset === "everyday") return [];
+  return null;
+}
+
 function formatMoney(value) {
   return moneyFormatter.format(value || 0);
 }
@@ -471,30 +500,93 @@ function DiscountsSection({
   onRemoveDiscount,
 }) {
   const [editingDiscountId, setEditingDiscountId] = useState(null);
+  const [isNewDiscountCustomWeekdays, setIsNewDiscountCustomWeekdays] = useState(false);
+  const [customWeekdayModeByDiscountId, setCustomWeekdayModeByDiscountId] = useState({});
+  const newDiscountType = newDiscount.discountType === "fixed" ? "fixed" : "percentage";
+  const newDiscountAppliesToAll = Boolean(newDiscount.applyToAllItems);
+  const newDiscountIsForever = Boolean(newDiscount.isForever);
+  const newDiscountWeekdayPreset = isNewDiscountCustomWeekdays
+    ? "custom"
+    : resolveWeekdayPreset(newDiscount.weekdays);
+  const newDiscountValue =
+    newDiscount.discountValue ?? newDiscount.discountPrice ?? "";
+  const resolveDiscountType = (discount) =>
+    discount.discountType === "fixed" || discount.discountType === "percentage"
+      ? discount.discountType
+      : Number.isFinite(Number(discount.discountPercent))
+        ? "percentage"
+        : "fixed";
+  const resolveDiscountValue = (discount) =>
+    discount.discountValue ??
+    (resolveDiscountType(discount) === "percentage"
+      ? discount.discountPercent
+      : discount.discountPrice) ??
+    "";
+  const onNewDiscountPresetChange = (value) => {
+    if (value === "custom") {
+      setIsNewDiscountCustomWeekdays(true);
+      return;
+    }
+    const presetWeekdays = weekdaysFromPreset(value);
+    if (!presetWeekdays) return;
+    setIsNewDiscountCustomWeekdays(false);
+    onNewDiscountChange("weekdays", presetWeekdays);
+  };
+  const onAddDiscountClick = () => {
+    onAddDiscount();
+    setIsNewDiscountCustomWeekdays(false);
+  };
 
   return (
     <SectionCard
       title="Discounts"
-      subtitle="Create scheduled promotions (happy hour, weekday, and event specials)."
+      subtitle="Create scheduled promotions with percent-off or fixed-price rules."
       collapsible
       defaultOpen={false}
     >
       <div className="mgr-sub-card">
         <h3>Add Promotion</h3>
+        <div className="mgr-discount-requirements" role="note" aria-live="polite">
+          <p>
+            <strong>Required:</strong> Promotion name, discount type/value, and scope
+            (enable <em>Apply to all menu items</em> or select at least one item).
+          </p>
+          <p>
+            <strong>Conditional:</strong> Weekdays are required for <em>Weekday Deal</em>,
+            event tag is required for <em>Event Special</em>, and start/end time must be
+            provided together.
+          </p>
+          <p>
+            <strong>Optional:</strong> Date range (when Forever is off), day schedule preset,
+            and event tag for non-event promotions.
+          </p>
+        </div>
         <div className="mgr-form-row">
           <input
             type="text"
-            placeholder="Promotion name"
+            placeholder="Promotion name (Required)"
             value={newDiscount.name}
             onChange={(e) => onNewDiscountChange("name", e.target.value)}
           />
+          <select
+            value={newDiscountType}
+            onChange={(e) => onNewDiscountChange("discountType", e.target.value)}
+          >
+            <option value="percentage">Percent Off</option>
+            <option value="fixed">Fixed Price</option>
+          </select>
           <input
             type="number"
-            min="0"
+            min={newDiscountType === "percentage" ? "1" : "0"}
+            max={newDiscountType === "percentage" ? "100" : undefined}
             step="0.01"
-            placeholder="Discount price"
-            value={newDiscount.discountPrice}
-            onChange={(e) => onNewDiscountChange("discountPrice", e.target.value)}
+            placeholder={
+              newDiscountType === "percentage"
+                ? "Percent off (Required)"
+                : "Discount price (Required)"
+            }
+            value={newDiscountValue}
+            onChange={(e) => onNewDiscountChange("discountValue", e.target.value)}
           />
           <select
             value={newDiscount.promotionType}
@@ -508,52 +600,97 @@ function DiscountsSection({
           <input
             type="date"
             value={newDiscount.startDate}
+            disabled={newDiscountIsForever}
+            title="Optional start date"
             onChange={(e) => onNewDiscountChange("startDate", e.target.value)}
           />
           <input
             type="date"
             value={newDiscount.endDate}
+            disabled={newDiscountIsForever}
+            title="Optional end date"
             onChange={(e) => onNewDiscountChange("endDate", e.target.value)}
           />
           <input
             type="time"
             value={newDiscount.startTime}
+            title="Optional start time (requires end time)"
             onChange={(e) => onNewDiscountChange("startTime", e.target.value)}
           />
           <input
             type="time"
             value={newDiscount.endTime}
+            title="Optional end time (requires start time)"
             onChange={(e) => onNewDiscountChange("endTime", e.target.value)}
           />
           <input
             type="text"
-            placeholder="Event tag (optional)"
+            placeholder="Event tag (Optional, required for Event Special)"
             value={newDiscount.eventTag}
             onChange={(e) => onNewDiscountChange("eventTag", e.target.value)}
           />
-          <button type="button" className="mgr-action-btn" onClick={onAddDiscount}>
+          <label>
+            <input
+              type="checkbox"
+              checked={newDiscountAppliesToAll}
+              onChange={(e) =>
+                onNewDiscountChange("applyToAllItems", e.target.checked)
+              }
+            />
+            Apply to all menu items (Required scope)
+          </label>
+          <label>
+            <input
+              type="checkbox"
+              checked={newDiscountIsForever}
+              onChange={(e) =>
+                onNewDiscountChange("isForever", e.target.checked)
+              }
+            />
+            Forever (Optional)
+          </label>
+          <div className="mgr-discount-days">
+            <label htmlFor="new-discount-days">Day Schedule</label>
+            <select
+              id="new-discount-days"
+              value={newDiscountWeekdayPreset}
+              onChange={(e) => onNewDiscountPresetChange(e.target.value)}
+            >
+              <option value="everyday">Every Day</option>
+              <option value="weekdays">All Weekdays (Mon-Fri)</option>
+              <option value="weekends">Weekends (Sat-Sun)</option>
+              <option value="custom">Custom Days</option>
+            </select>
+          </div>
+          <button type="button" className="mgr-action-btn" onClick={onAddDiscountClick}>
             <PlusIcon />
             Add Promotion
           </button>
         </div>
-        <div className="mgr-checkbox-grid">
-          {WEEKDAY_OPTIONS.map((day) => (
-            <label key={`new-discount-day-${day.value}`}>
-              <input
-                type="checkbox"
-                checked={newDiscount.weekdays.includes(day.value)}
-                onChange={() => onToggleNewDiscountWeekday(day.value)}
-              />
-              {day.label}
-            </label>
-          ))}
-        </div>
+        <p className="mgr-discount-selection-note">
+          Item selection is required only when <em>Apply to all menu items</em> is off.
+        </p>
+        {newDiscountWeekdayPreset === "custom" && (
+          <div className="mgr-checkbox-grid mgr-checkbox-grid--days">
+            {WEEKDAY_OPTIONS.map((day) => (
+              <label key={`new-discount-day-${day.value}`}>
+                <input
+                  type="checkbox"
+                  checked={newDiscount.weekdays.includes(day.value)}
+                  onChange={() => onToggleNewDiscountWeekday(day.value)}
+                />
+                {day.label}
+              </label>
+            ))}
+          </div>
+        )}
         <div className="mgr-checkbox-grid">
           {sortedCatalog.map((item) => (
             <label key={item.id}>
               <input
                 type="checkbox"
                 checked={newDiscount.itemIds.includes(item.id)}
+                disabled={newDiscountAppliesToAll}
                 onChange={() => onToggleNewDiscountItem(item.id)}
               />
               {item.name}
@@ -564,6 +701,16 @@ function DiscountsSection({
 
       {discounts.map((discount) => {
         const isEditing = editingDiscountId === discount.id;
+        const discountType = resolveDiscountType(discount);
+        const discountValue = resolveDiscountValue(discount);
+        const appliesToAll = Boolean(discount.applyToAllItems);
+        const isForever =
+          discount.isForever === undefined
+            ? !discount.startDate && !discount.endDate
+            : Boolean(discount.isForever);
+        const weekdayPreset = customWeekdayModeByDiscountId[discount.id]
+          ? "custom"
+          : resolveWeekdayPreset(discount.weekdays);
         return (
           <div
             key={discount.id}
@@ -578,14 +725,25 @@ function DiscountsSection({
               />
               <input
                 type="number"
-                min="0"
+                min={discountType === "percentage" ? "1" : "0"}
+                max={discountType === "percentage" ? "100" : undefined}
                 step="0.01"
-                value={discount.discountPrice}
+                value={discountValue}
                 disabled={!isEditing}
                 onChange={(e) =>
-                  onUpdateDiscount(discount.id, "discountPrice", e.target.value)
+                  onUpdateDiscount(discount.id, "discountValue", e.target.value)
                 }
               />
+              <select
+                value={discountType}
+                disabled={!isEditing}
+                onChange={(e) =>
+                  onUpdateDiscount(discount.id, "discountType", e.target.value)
+                }
+              >
+                <option value="percentage">Percent Off</option>
+                <option value="fixed">Fixed Price</option>
+              </select>
               <select
                 value={discount.promotionType ?? "standard"}
                 disabled={!isEditing}
@@ -601,13 +759,13 @@ function DiscountsSection({
               <input
                 type="date"
                 value={discount.startDate ?? ""}
-                disabled={!isEditing}
+                disabled={!isEditing || isForever}
                 onChange={(e) => onUpdateDiscount(discount.id, "startDate", e.target.value)}
               />
               <input
                 type="date"
                 value={discount.endDate ?? ""}
-                disabled={!isEditing}
+                disabled={!isEditing || isForever}
                 onChange={(e) => onUpdateDiscount(discount.id, "endDate", e.target.value)}
               />
               <input
@@ -629,6 +787,57 @@ function DiscountsSection({
                 disabled={!isEditing}
                 onChange={(e) => onUpdateDiscount(discount.id, "eventTag", e.target.value)}
               />
+              <label>
+                <input
+                  type="checkbox"
+                  checked={appliesToAll}
+                  disabled={!isEditing}
+                  onChange={(e) =>
+                    onUpdateDiscount(discount.id, "applyToAllItems", e.target.checked)
+                  }
+                />
+                Apply to all menu items
+              </label>
+              <label>
+                <input
+                  type="checkbox"
+                  checked={isForever}
+                  disabled={!isEditing}
+                  onChange={(e) =>
+                    onUpdateDiscount(discount.id, "isForever", e.target.checked)
+                  }
+                />
+                Forever (no date range)
+              </label>
+              <div className="mgr-discount-days">
+                <label htmlFor={`${discount.id}-days`}>Day Schedule</label>
+                <select
+                  id={`${discount.id}-days`}
+                  value={weekdayPreset}
+                  disabled={!isEditing}
+                  onChange={(e) => {
+                    if (e.target.value === "custom") {
+                      setCustomWeekdayModeByDiscountId((current) => ({
+                        ...current,
+                        [discount.id]: true,
+                      }));
+                      return;
+                    }
+                    const presetWeekdays = weekdaysFromPreset(e.target.value);
+                    if (!presetWeekdays) return;
+                    setCustomWeekdayModeByDiscountId((current) => ({
+                      ...current,
+                      [discount.id]: false,
+                    }));
+                    onUpdateDiscount(discount.id, "weekdays", presetWeekdays);
+                  }}
+                >
+                  <option value="everyday">Every Day</option>
+                  <option value="weekdays">All Weekdays (Mon-Fri)</option>
+                  <option value="weekends">Weekends (Sat-Sun)</option>
+                  <option value="custom">Custom Days</option>
+                </select>
+              </div>
               <div className="mgr-actions">
                 <IconButton
                   label={isEditing ? "Stop editing discount" : "Edit discount"}
@@ -647,19 +856,20 @@ function DiscountsSection({
               </div>
             </div>
 
-            <div className="mgr-checkbox-grid">
-              {WEEKDAY_OPTIONS.map((day) => (
-                <label key={`${discount.id}-day-${day.value}`}>
-                  <input
-                    type="checkbox"
-                    checked={(discount.weekdays ?? []).includes(day.value)}
-                    disabled={!isEditing}
-                    onChange={() => onToggleDiscountWeekday(discount.id, day.value)}
-                  />
-                  {day.label}
-                </label>
-              ))}
-            </div>
+            {isEditing && weekdayPreset === "custom" && (
+              <div className="mgr-checkbox-grid mgr-checkbox-grid--days">
+                {WEEKDAY_OPTIONS.map((day) => (
+                  <label key={`${discount.id}-day-${day.value}`}>
+                    <input
+                      type="checkbox"
+                      checked={(discount.weekdays ?? []).includes(day.value)}
+                      onChange={() => onToggleDiscountWeekday(discount.id, day.value)}
+                    />
+                    {day.label}
+                  </label>
+                ))}
+              </div>
+            )}
 
             <div className="mgr-checkbox-grid">
               {sortedCatalog.map((item) => (
@@ -667,7 +877,7 @@ function DiscountsSection({
                   <input
                     type="checkbox"
                     checked={discount.itemIds.includes(item.id)}
-                    disabled={!isEditing}
+                    disabled={!isEditing || appliesToAll}
                     onChange={() => onToggleDiscountItem(discount.id, item.id)}
                   />
                   {item.name}
