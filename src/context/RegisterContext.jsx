@@ -370,14 +370,6 @@ export function RegisterProvider({ children }) {
     () => buildStockUsageFromTray(tray, comboById),
     [tray, comboById],
   );
-  const remainingStockByItemId = useMemo(
-    () =>
-      catalog.reduce((stockMap, item) => {
-        stockMap[item.id] = Math.max(0, item.stock - (stockUsageByItemId[item.id] ?? 0));
-        return stockMap;
-      }, {}),
-    [catalog, stockUsageByItemId],
-  );
   const registerStatsByRegister = appState.registerStatsByRegister ?? EMPTY_OBJECT;
   const abuseSignalsByRegister = appState.abuseSignalsByRegister ?? EMPTY_OBJECT;
   const registerTierByRegister = appState.registerTierByRegister ?? EMPTY_OBJECT;
@@ -442,13 +434,10 @@ export function RegisterProvider({ children }) {
             itemNames: comboItems.map((item) => item.name),
             basePrice,
             savings: Math.max(0, basePrice - combo.bundlePrice),
-            isInStock: combo.itemIds.every(
-              (itemId) => (remainingStockByItemId[itemId] ?? 0) > 0,
-            ),
           };
         })
         .filter(Boolean),
-    [combos, catalogById, remainingStockByItemId],
+    [combos, catalogById],
   );
 
   const managerItems = useMemo(() => {
@@ -763,10 +752,6 @@ export function RegisterProvider({ children }) {
         currentSession.selectedDiscountIds.includes(discount.id) &&
         isDiscountActive(discount, discountContext),
     );
-    const remainingStock = catalogItems.reduce((map, item) => {
-      map[item.id] = item.stock;
-      return map;
-    }, {});
     const nextTray = [];
 
     const addLine = (line) => {
@@ -791,16 +776,7 @@ export function RegisterProvider({ children }) {
         const combo = comboMap.get(comboId);
         if (!combo) return;
         if (combo.itemIds.some((itemId) => !catalogMap.has(itemId))) return;
-
-        const maxQty = combo.itemIds.reduce(
-          (minQty, itemId) => Math.min(minQty, remainingStock[itemId] ?? 0),
-          Number.POSITIVE_INFINITY,
-        );
-        const qty = Math.min(requestedQty, maxQty);
-        if (!Number.isFinite(qty) || qty <= 0) return;
-        combo.itemIds.forEach((itemId) => {
-          remainingStock[itemId] = Math.max(0, (remainingStock[itemId] ?? 0) - qty);
-        });
+        const qty = requestedQty;
         const comboBasePrice = calcComboBasePrice(combo, catalogMap);
         const comboUnitPrice = useDiscountPricing
           ? calcDiscountedComboPrice({
@@ -830,9 +806,7 @@ export function RegisterProvider({ children }) {
       const item = catalogMap.get(itemId);
       if (!item) return;
 
-      const qty = Math.min(requestedQty, remainingStock[item.id] ?? item.stock);
-      if (qty <= 0) return;
-      remainingStock[item.id] = Math.max(0, (remainingStock[item.id] ?? item.stock) - qty);
+      const qty = requestedQty;
 
       addLine({
         id: item.id,
@@ -984,14 +958,9 @@ export function RegisterProvider({ children }) {
     markTrayDirty(registerId);
   };
 
-  const canAddComboToTray = (combo, currentTray) => {
+  const canAddComboToTray = (combo) => {
     if (!combo || combo.itemIds.length === 0) return false;
-    const stockUsage = buildStockUsageFromTray(currentTray, comboById);
-    return combo.itemIds.every((itemId) => {
-      const item = catalogById.get(itemId);
-      if (!item) return false;
-      return (stockUsage[itemId] ?? 0) < item.stock;
-    });
+    return combo.itemIds.every((itemId) => catalogById.has(itemId));
   };
 
   const actions = {
@@ -1224,8 +1193,6 @@ export function RegisterProvider({ children }) {
       const existing = currentTray.find(
         (trayItem) => !isComboTrayLine(trayItem) && resolveTrayItemId(trayItem) === id,
       );
-      const stockUsage = buildStockUsageFromTray(currentTray, comboById);
-      if ((stockUsage[item.id] ?? 0) >= item.stock) return;
 
       const nextTray = existing
         ? currentTray.map((trayItem) =>
@@ -1256,7 +1223,7 @@ export function RegisterProvider({ children }) {
       if (!combo) return;
 
       const currentTray = appState.traysByRegister[appState.activeRegisterId] ?? [];
-      if (!canAddComboToTray(combo, currentTray)) return;
+      if (!canAddComboToTray(combo)) return;
 
       const lineId = buildComboLineId(combo.id);
       const existing = currentTray.find((trayItem) => trayItem.id === lineId);
@@ -1297,7 +1264,7 @@ export function RegisterProvider({ children }) {
             : "");
         const combo = comboById.get(comboId);
         if (!combo) return;
-        if (!canAddComboToTray(combo, currentTray)) return;
+        if (!canAddComboToTray(combo)) return;
         const comboLineId = buildComboLineId(combo.id);
         const nextTray = currentTray.map((line) =>
           line.id === comboLineId ? { ...line, qty: line.qty + 1 } : line,
@@ -1309,8 +1276,6 @@ export function RegisterProvider({ children }) {
       const itemId = resolveTrayItemId(trayItem);
       const item = catalogById.get(itemId);
       if (!item) return;
-      const stockUsage = buildStockUsageFromTray(currentTray, comboById);
-      if ((stockUsage[itemId] ?? 0) >= item.stock) return;
       const nextTray = currentTray.map((line) =>
         line.id === lineId ? { ...line, qty: line.qty + 1, unitPrice: item.price } : line,
       );
@@ -2183,7 +2148,6 @@ export function RegisterProvider({ children }) {
     customerItems,
     combos,
     availableCombos,
-    remainingStockByItemId,
     availableSessionDiscounts,
     total,
     categories,

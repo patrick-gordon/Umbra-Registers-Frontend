@@ -8,20 +8,26 @@ import "./App.css";
 
 function AppShell() {
   const { state } = useRegisterStore();
+  const isDetachedView = state.view === "employee" || state.view === "customer";
 
   if (!state.uiVisible) {
     return null;
   }
 
   return (
-    <div className="app-modal-layer" role="dialog" aria-modal="true" aria-label="Umbra Register">
-      <div className="app-shell">
+    <div
+      className={`app-modal-layer ${isDetachedView ? "app-modal-layer--detached" : ""}`}
+      role="dialog"
+      aria-modal="true"
+      aria-label="Umbra Register"
+    >
+      <div className={`app-shell ${isDetachedView ? "app-shell--detached" : ""}`}>
         {/* <header className="app-header">
           <h1>Umbra Register</h1>
           <p>Point-of-sale dashboard</p>
         </header> */}
 
-        <section className="app-surface">
+        <section className="app-surface app-surface--controls">
           <AppControls />
         </section>
 

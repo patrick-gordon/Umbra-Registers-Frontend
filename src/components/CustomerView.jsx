@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import MinigameResultModal from "./MinigameResultModal";
+import DraggablePanel from "./DraggablePanel";
 import { useRegisterStore } from "../context/useRegisterStore";
 
 function CustomerActions({ tray, total, onPay, onSteal, canSteal }) {
@@ -169,6 +170,7 @@ function CustomerReceipt({ receipt, onDismiss }) {
 
 export default function CustomerView() {
   const { state, actions } = useRegisterStore();
+  const isDetachedLayout = state.view === "customer";
   const canShowReceipt =
     Boolean(state.customerReceipt) &&
     state.session.phase !== "customer" &&
@@ -177,42 +179,49 @@ export default function CustomerView() {
     state.tray.length === 0;
 
   return (
-    <div className="view-shell view-shell--compact view-layout">
+    <div className="view-shell view-shell--compact view-layout customer-view-shell">
       <h2 className="view-page-title">
         {state.activeStoreName} - {state.registerName}
       </h2>
 
-      {state.session.phase === "customer" ? (
-        <CustomerActions
-          tray={state.tray}
-          total={state.total}
-          onPay={actions.onCustomerPay}
-          onSteal={actions.onCustomerSteal}
-          canSteal={state.session.stealMinigame?.winner !== "employee"}
-        />
-      ) : state.session.phase === "stealMinigame" ? (
-        <StealMinigame
-          stealMinigame={state.session.stealMinigame}
-          onTap={actions.onStealMinigameTap}
-        />
-      ) : canShowReceipt ? (
-        <CustomerReceipt
-          receipt={state.customerReceipt}
-          onDismiss={actions.onDismissCustomerReceipt}
-        />
-      ) : (
-        <div className="view-card is-open customer-empty-state">
-          <div className="customer-empty-glyph" aria-hidden="true">
-            UT
+      <DraggablePanel
+        enabled={isDetachedLayout}
+        panelId="customer-main-panel"
+        panelWidth="420px"
+        defaultOffset={{ x: 0, y: 0 }}
+      >
+        {state.session.phase === "customer" ? (
+          <CustomerActions
+            tray={state.tray}
+            total={state.total}
+            onPay={actions.onCustomerPay}
+            onSteal={actions.onCustomerSteal}
+            canSteal={state.session.stealMinigame?.winner !== "employee"}
+          />
+        ) : state.session.phase === "stealMinigame" ? (
+          <StealMinigame
+            stealMinigame={state.session.stealMinigame}
+            onTap={actions.onStealMinigameTap}
+          />
+        ) : canShowReceipt ? (
+          <CustomerReceipt
+            receipt={state.customerReceipt}
+            onDismiss={actions.onDismissCustomerReceipt}
+          />
+        ) : (
+          <div className="view-card is-open customer-empty-state">
+            <div className="customer-empty-glyph" aria-hidden="true">
+              UT
+            </div>
+            <div>
+              <h3 className="card-title">Welcome to {state.activeStoreName}</h3>
+              <p className="view-note view-note--compact">
+                Your order appears here once an employee starts the transaction.
+              </p>
+            </div>
           </div>
-          <div>
-            <h3 className="card-title">Welcome to {state.activeStoreName}</h3>
-            <p className="view-note view-note--compact">
-              Your order appears here once an employee starts the transaction.
-            </p>
-          </div>
-        </div>
-      )}
+        )}
+      </DraggablePanel>
       {state.minigameResult && (
         <MinigameResultModal
           result={state.minigameResult}

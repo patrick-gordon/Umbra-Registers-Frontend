@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import MinigameResultModal from "./MinigameResultModal";
+import DraggablePanel from "./DraggablePanel";
 import { useRegisterStore } from "../context/useRegisterStore";
 
 function ProcessingIssueModal({
@@ -186,21 +187,27 @@ function EmployeeActions({
       <div className="employee-action-row employee-action-row--compact">
         <button
           type="button"
+          className="employee-action-btn employee-action-btn--ring"
           onClick={onRingUp}
           disabled={!hasTrayItems || isProcessing || canConfirm}
         >
           Ring Up
         </button>
-        <button type="button" onClick={onConfirm} disabled={!canConfirm || isProcessing}>
+        <button
+          type="button"
+          className="employee-action-btn employee-action-btn--confirm"
+          onClick={onConfirm}
+          disabled={!canConfirm || isProcessing}
+        >
           Enable Customer Actions
         </button>
         <button
           type="button"
-          className="button-danger"
+          className="employee-action-btn employee-action-btn--cancel"
           onClick={onClearTransaction}
           disabled={!canClearTransaction || isProcessing}
         >
-          Clear Transaction
+          Cancel Transaction
         </button>
       </div>
     </div>
@@ -225,22 +232,17 @@ function ComboBuilder({ combos, onAddCombo }) {
             <button
               key={combo.id}
               type="button"
-              className="employee-combo-chip"
+              className="employee-item-chip employee-combo-chip"
               onClick={() => onAddCombo(combo.id)}
-              disabled={!combo.isInStock}
+              title={combo.itemNames.join(" + ")}
             >
-              <span className="employee-combo-chip-title">
-                {combo.name}
-              </span>
-              <span className="employee-combo-chip-items">
-                {combo.itemNames.join(" + ")}
-              </span>
+              <span>{combo.name}</span>
               <strong>${combo.bundlePrice.toFixed(2)}</strong>
-              {combo.savings > 0 && (
-                <span className="employee-combo-chip-savings">
-                  Save ${combo.savings.toFixed(2)}
-                </span>
-              )}
+              <small>
+                {combo.savings > 0
+                  ? `Save $${combo.savings.toFixed(2)}`
+                  : `${combo.itemNames.length} item bundle`}
+              </small>
             </button>
           ))}
         </div>
@@ -281,27 +283,41 @@ function OrderBreakdown({ tray, total, onIncrease, onDecrease, onRemove, isRungU
                     {item.lineType === "combo" && (
                       <span className="employee-line-meta">Combo</span>
                     )}
+                    <span className="employee-line-unit">${unitPrice.toFixed(2)} each</span>
                     {hasAppliedDiscount && (
                       <span className="employee-line-discount">
-                        Discounted ${baseUnitPrice.toFixed(2)}{" -> "}$
-                        {unitPrice.toFixed(2)} each
+                        Was ${baseUnitPrice.toFixed(2)}
                       </span>
                     )}
                   </div>
                 </div>
-                <button type="button" className="employee-qty-btn" onClick={() => onDecrease(item.id)}>
-                  -
-                </button>
-                <span className="employee-qty-value">{item.qty}</span>
-                <button type="button" className="employee-qty-btn" onClick={() => onIncrease(item.id)}>
-                  +
-                </button>
-                <button type="button" className="employee-remove-btn" onClick={() => onRemove(item.id)}>
-                  Remove
-                </button>
-                <strong className="employee-line-total">
-                  ${(unitPrice * item.qty).toFixed(2)}
-                </strong>
+                <div className="employee-line-side">
+                  <strong className="employee-line-total">
+                    ${(unitPrice * item.qty).toFixed(2)}
+                  </strong>
+                  <div className="employee-line-controls">
+                    <button
+                      type="button"
+                      className="employee-qty-btn"
+                      onClick={() => onDecrease(item.id)}
+                      aria-label={`Decrease ${item.name}`}
+                    >
+                      -
+                    </button>
+                    <span className="employee-qty-value">{item.qty}</span>
+                    <button
+                      type="button"
+                      className="employee-qty-btn"
+                      onClick={() => onIncrease(item.id)}
+                      aria-label={`Increase ${item.name}`}
+                    >
+                      +
+                    </button>
+                    <button type="button" className="employee-remove-btn" onClick={() => onRemove(item.id)}>
+                      Remove
+                    </button>
+                  </div>
+                </div>
               </div>
             );
           })}
@@ -358,18 +374,24 @@ function StealDefensePanel({ stealMinigame, onTap }) {
 
 export default function EmployeeView() {
   const { state, actions } = useRegisterStore();
+  const isDetachedLayout = state.view === "employee";
   const showProcessingIssue =
     state.session.phase === "employee" && Boolean(state.session.processingError);
 
   return (
-    <div className="view-shell view-shell--compact view-layout">
+    <div className="view-shell view-shell--compact view-layout employee-view-shell">
       <h2 className="view-page-title">
         {state.activeStoreName} - {state.registerName}
       </h2>
 
       {state.session.phase === "employee" && (
-        <div className="view-grid-two employee-top-grid">
-          <div className="employee-panel-stack">
+        <div className="employee-layout-stack">
+          <DraggablePanel
+            enabled={isDetachedLayout}
+            panelId="employee-item-picker"
+            panelWidth="300px"
+            defaultOffset={{ x: -450, y: 0 }}
+          >
             <div className="view-card is-open employee-card-compact">
               <div className="section-header">
                 <h3 className="card-title">Item Picker</h3>
@@ -380,67 +402,91 @@ export default function EmployeeView() {
               </p>
               <div className="employee-item-picker">
                 {state.customerItems.map((item) => {
-                  const remainingStock = state.remainingStockByItemId[item.id] ?? item.stock;
-                  const outOfStock = remainingStock <= 0;
                   return (
                     <button
                       key={item.id}
                       className="employee-item-chip"
                       type="button"
                       onClick={() => actions.onAddToTray(item.id)}
-                      disabled={outOfStock}
                     >
                       <span>{item.name}</span>
                       <strong>${item.effectivePrice.toFixed(2)}</strong>
-                      <small>{remainingStock} left</small>
                     </button>
                   );
                 })}
               </div>
             </div>
+          </DraggablePanel>
 
+          <DraggablePanel
+            enabled={isDetachedLayout}
+            panelId="employee-combo-builder"
+            panelWidth="300px"
+            defaultOffset={{ x: -150, y: 0 }}
+          >
             <ComboBuilder
               combos={state.availableCombos}
               onAddCombo={actions.onAddComboToTray}
             />
-          </div>
+          </DraggablePanel>
 
-          <OrderBreakdown
-            tray={state.tray}
-            total={state.total}
-            onIncrease={actions.onIncreaseTrayLine}
-            onDecrease={actions.onDecreaseTrayItem}
-            onRemove={actions.onRemoveTrayItem}
-            isRungUp={state.session.isRungUp}
-          />
+          <DraggablePanel
+            enabled={isDetachedLayout}
+            panelId="employee-order-breakdown"
+            panelWidth="300px"
+            defaultOffset={{ x: 150, y: 0 }}
+          >
+            <OrderBreakdown
+              tray={state.tray}
+              total={state.total}
+              onIncrease={actions.onIncreaseTrayLine}
+              onDecrease={actions.onDecreaseTrayItem}
+              onRemove={actions.onRemoveTrayItem}
+              isRungUp={state.session.isRungUp}
+            />
+          </DraggablePanel>
         </div>
       )}
 
       {state.session.phase === "stealMinigame" ? (
-        <StealDefensePanel
-          stealMinigame={state.session.stealMinigame}
-          onTap={actions.onStealMinigameTap}
-        />
+        <DraggablePanel
+          enabled={isDetachedLayout}
+          panelId="employee-steal-defense"
+          panelWidth="340px"
+          defaultOffset={{ x: 0, y: 0 }}
+        >
+          <StealDefensePanel
+            stealMinigame={state.session.stealMinigame}
+            onTap={actions.onStealMinigameTap}
+          />
+        </DraggablePanel>
       ) : (
-        <EmployeeActions
-          availableSessionDiscounts={state.availableSessionDiscounts}
-          selectedDiscountIds={state.session.selectedDiscountIds}
-          onToggleDiscount={actions.onToggleSessionDiscount}
-          onRingUp={actions.onRingUp}
-          onConfirm={actions.onConfirmCustomerActions}
-          onClearTransaction={actions.onClearTransaction}
-          hasTrayItems={state.tray.length > 0}
-          canConfirm={state.session.isRungUp}
-          canClearTransaction={
-            state.tray.length > 0 ||
-            state.session.isRungUp ||
-            state.session.selectedDiscountIds.length > 0 ||
-            state.session.phase !== "employee"
-          }
-          isProcessing={state.session.isProcessing}
-          processingProgress={state.session.processingProgress}
-          activeRegisterTier={state.activeRegisterTier}
-        />
+        <DraggablePanel
+          enabled={isDetachedLayout}
+          panelId="employee-actions"
+          panelWidth="300px"
+          defaultOffset={{ x: 450, y: 0 }}
+        >
+          <EmployeeActions
+            availableSessionDiscounts={state.availableSessionDiscounts}
+            selectedDiscountIds={state.session.selectedDiscountIds}
+            onToggleDiscount={actions.onToggleSessionDiscount}
+            onRingUp={actions.onRingUp}
+            onConfirm={actions.onConfirmCustomerActions}
+            onClearTransaction={actions.onClearTransaction}
+            hasTrayItems={state.tray.length > 0}
+            canConfirm={state.session.isRungUp}
+            canClearTransaction={
+              state.tray.length > 0 ||
+              state.session.isRungUp ||
+              state.session.selectedDiscountIds.length > 0 ||
+              state.session.phase !== "employee"
+            }
+            isProcessing={state.session.isProcessing}
+            processingProgress={state.session.processingProgress}
+            activeRegisterTier={state.activeRegisterTier}
+          />
+        </DraggablePanel>
       )}
       {showProcessingIssue && (
         <ProcessingIssueModal
