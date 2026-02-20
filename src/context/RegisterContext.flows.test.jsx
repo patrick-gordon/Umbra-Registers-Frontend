@@ -3,12 +3,15 @@ import { cleanup, renderHook } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { RegisterProvider } from "./RegisterContext";
 import { useRegisterStore } from "./useRegisterStore";
+import { postNui } from "../utils/fivemNui";
 
 vi.mock("../utils/fivemNui", () => ({
   isFiveM: () => false,
   onNuiMessage: () => () => {},
-  postNui: vi.fn(() => new Promise(() => {})),
+  postNui: vi.fn(() => Promise.resolve({ ok: true, data: null })),
 }));
+
+const postNuiMock = vi.mocked(postNui);
 
 function createStoreHarness() {
   const wrapper = ({ children }) => (
@@ -83,6 +86,8 @@ async function ringUpToCustomerPhase(harness) {
 beforeEach(() => {
   vi.useFakeTimers();
   vi.spyOn(Math, "random").mockReturnValue(0.99);
+  postNuiMock.mockClear();
+  postNuiMock.mockResolvedValue({ ok: true, data: null });
 });
 
 afterEach(() => {
@@ -136,6 +141,93 @@ describe("Register flow coverage", () => {
     expect(harness.getState().session.processingError).toBe("");
   });
 
+  it("keeps employee in edit mode when ring-up inventory validation fails", async () => {
+    const harness = createStoreHarness();
+
+    act(() => {
+      harness.getActions().onAddToTray("1");
+    });
+
+    postNuiMock.mockResolvedValueOnce({
+      ok: true,
+      data: {
+        ok: false,
+        error: {
+          code: "INSUFFICIENT_STOCK",
+          message: "Inventory validation failed.",
+          details: {
+            missingItems: ["Coffee Beans"],
+            insufficientQty: [{ name: "Bagel", required: 2, available: 1 }],
+            comboInvalid: ["combo-breakfast"],
+          },
+        },
+      },
+    });
+
+    const processingMs = harness.getState().activeRegisterTier.processingMs;
+    act(() => {
+      harness.getActions().onRingUp();
+    });
+    act(() => {
+      vi.advanceTimersByTime(processingMs + 10);
+    });
+    await act(async () => {});
+    await act(async () => {});
+
+    const state = harness.getState();
+    expect(state.session.phase).toBe("employee");
+    expect(state.session.isRungUp).toBe(false);
+    expect(state.session.processingError).toContain("Inventory validation failed.");
+    expect(state.session.processingError).toContain("Missing items");
+    expect(state.session.processingError).toContain("Insufficient quantities");
+    expect(state.session.processingError).toContain("Invalid combos");
+  });
+
+  it("uses server-authoritative tray totals returned from ring-up", async () => {
+    const harness = createStoreHarness();
+
+    act(() => {
+      harness.getActions().onAddToTray("1");
+    });
+
+    postNuiMock.mockResolvedValueOnce({
+      ok: true,
+      data: {
+        ok: true,
+        data: {
+          tray: [
+            {
+              id: "1",
+              lineType: "item",
+              itemId: "1",
+              name: "Coffee",
+              qty: 1,
+              basePrice: 3.5,
+              unitPrice: 2.25,
+            },
+          ],
+          selectedDiscountIds: [],
+        },
+      },
+    });
+
+    const processingMs = harness.getState().activeRegisterTier.processingMs;
+    act(() => {
+      harness.getActions().onRingUp();
+    });
+    act(() => {
+      vi.advanceTimersByTime(processingMs + 10);
+    });
+    await act(async () => {});
+
+    const state = harness.getState();
+    const coffeeLine = state.tray.find((line) => line.id === "1");
+    expect(state.session.isRungUp).toBe(true);
+    expect(coffeeLine).toBeTruthy();
+    expect(coffeeLine.unitPrice).toBeCloseTo(2.25, 2);
+    expect(state.total).toBeCloseTo(2.25, 2);
+  });
+
   it("finalizes payment and resets the register session", async () => {
     const harness = createStoreHarness();
     await ringUpToCustomerPhase(harness);
@@ -157,6 +249,16 @@ describe("Register flow coverage", () => {
     expect(state.customerReceipt.total).toBe(totalBeforePay);
     expect(stats.paidTransactions).toBe(1);
     expect(stats.totalTransactions).toBe(1);
+
+    const customerPaidCall = postNuiMock.mock.calls.find(
+      ([eventName]) => eventName === "customerPaid",
+    );
+    expect(customerPaidCall).toBeTruthy();
+    const customerPaidPayload = customerPaidCall[1];
+    expect(customerPaidPayload.receiptId).toBeTruthy();
+    expect(customerPaidPayload.receipt).toBeTruthy();
+    expect(customerPaidPayload.receipt.id).toBe(customerPaidPayload.receiptId);
+    expect(customerPaidPayload.receipt.items.length).toBeGreaterThan(0);
   });
 
   it("runs steal minigame and resolves with employee defense win", async () => {

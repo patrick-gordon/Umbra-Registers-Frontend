@@ -95,6 +95,11 @@
   overflow: visible;
 }
 
+.app-shell--detached .app-role-view {
+  min-height: 0;
+  height: 100%;
+}
+
 .app-shell--detached .employee-view-shell,
 .app-shell--detached .customer-view-shell {
   width: 100%;
@@ -331,6 +336,14 @@
   padding: 0.44rem;
   overflow-y: auto;
   overflow-x: hidden;
+}
+
+.app-role-view {
+  width: 100%;
+}
+
+.app-role-view.is-hidden {
+  display: none;
 }
 
 .app-controls {
@@ -1016,20 +1029,19 @@
 .employee-processing-overlay {
   position: fixed;
   inset: 0;
-  z-index: 42;
+  z-index: 2147483647;
   display: flex;
-  align-items: center;
-  justify-content: center;
+  align-items: flex-start;
+  justify-content: flex-end;
   padding: 0.8rem;
-  background:
-    radial-gradient(circle at 50% 20%, rgba(255, 122, 96, 0.14), transparent 45%),
-    rgba(8, 8, 14, 0.72);
-  backdrop-filter: blur(3px);
+  pointer-events: none;
+  background: none;
+  backdrop-filter: none;
 }
 
 .employee-processing-modal {
   position: relative;
-  width: min(420px, 100%);
+  width: min(360px, calc(100vw - 1.6rem));
   border: 1px solid color-mix(in srgb, #ff7f67 68%, transparent 32%);
   border-radius: 12px;
   background:
@@ -1043,6 +1055,7 @@
   gap: 0.52rem;
   animation: jamModalIn 220ms ease;
   overflow: hidden;
+  pointer-events: auto;
 }
 
 .employee-processing-modal-head {

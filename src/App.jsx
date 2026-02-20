@@ -8,7 +8,10 @@ import "./App.css";
 
 function AppShell() {
   const { state } = useRegisterStore();
-  const isDetachedView = state.view === "employee" || state.view === "customer";
+  const showManagerView = state.view === "manager" && state.allowedViews.includes("manager");
+  const showEmployeeView = state.view === "employee" && state.allowedViews.includes("employee");
+  const showCustomerView = state.view === "customer" && state.allowedViews.includes("customer");
+  const isDetachedView = showEmployeeView || showCustomerView;
 
   if (!state.uiVisible) {
     return null;
@@ -32,27 +35,28 @@ function AppShell() {
         </section>
 
         <section className="app-surface app-surface--content">
-          {state.view === "manager" && state.allowedViews.includes("manager") && <ManagerView />}
-          {state.view === "employee" && state.allowedViews.includes("employee") && <EmployeeView />}
-          {state.view === "customer" && <CustomerView />}
+          {state.allowedViews.includes("manager") && (
+            <div
+              className={`app-role-view app-role-view--manager ${showManagerView ? "is-visible" : "is-hidden"}`}
+              aria-hidden={!showManagerView}
+            >
+              {showManagerView && <ManagerView />}
+            </div>
+          )}
+          <div
+            className={`app-role-view app-role-view--employee ${showEmployeeView ? "is-visible" : "is-hidden"}`}
+            aria-hidden={!showEmployeeView}
+          >
+            {showEmployeeView && <EmployeeView />}
+          </div>
+          <div
+            className={`app-role-view app-role-view--customer ${showCustomerView ? "is-visible" : "is-hidden"}`}
+            aria-hidden={!showCustomerView}
+          >
+            {showCustomerView && <CustomerView />}
+          </div>
         </section>
 
-        {state.session.isProcessing && state.activeRegisterTierLevel === 1 && (
-          <div className="register-loading-overlay">
-            <div className="register-loading-modal">
-              <div className="register-loading-spinner" aria-hidden="true" />
-              <h3>Calibrating Starter Register</h3>
-              <p>Scanning prices and computing total...</p>
-              <p>{Math.min(100, Math.max(0, state.session.processingProgress))}%</p>
-              <div className="register-loading-bar">
-                <div
-                  className="register-loading-bar-fill"
-                  style={{ width: `${Math.min(100, Math.max(0, state.session.processingProgress))}%` }}
-                />
-              </div>
-            </div>
-          </div>
-        )}
       </div>
     </div>
   );

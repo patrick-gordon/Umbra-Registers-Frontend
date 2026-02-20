@@ -255,6 +255,124 @@ const resolveOrganizationMembership = (payload) => {
   return null;
 };
 
+const normalizeNuiCallbackResponse = (response) => {
+  if (!response?.ok) return response;
+  const payload = response.data;
+  // Some backends encode callback failures in JSON while still returning HTTP 200.
+  // Normalize those into the standard `ok:false` shape used by UI action handlers.
+  if (!payload || typeof payload !== "object" || payload.ok !== false) {
+    return response;
+  }
+  const code = normalizeNuiErrorCode(payload.error?.code, NUI_ERROR_CODES.NUI_ERROR);
+  const errorInfo = getNuiErrorInfo(code);
+  return {
+    ...response,
+    ok: false,
+    error: {
+      code,
+      message: payload.error?.message || errorInfo.defaultMessage,
+      details:
+        payload.error?.details && typeof payload.error.details === "object"
+          ? payload.error.details
+          : null,
+    },
+  };
+};
+
+const getNuiResponseData = (payload) => {
+  if (!payload || typeof payload !== "object") return EMPTY_OBJECT;
+  // Support both response envelopes:
+  // 1) direct data object
+  // 2) `{ ok:true, data:{...} }` callback contract
+  if (typeof payload.ok === "boolean") {
+    return payload.data && typeof payload.data === "object"
+      ? payload.data
+      : EMPTY_OBJECT;
+  }
+  return payload;
+};
+
+const formatValidationEntry = (entry) => {
+  if (typeof entry === "string") return entry;
+  if (!entry || typeof entry !== "object") return "";
+  const label =
+    entry.label ??
+    entry.name ??
+    entry.itemName ??
+    entry.comboName ??
+    entry.comboId ??
+    entry.itemId;
+  const required = Number(entry.required ?? entry.qty ?? entry.requested ?? entry.need);
+  const available = Number(entry.available ?? entry.have ?? entry.inInventory);
+  const qtyPart = Number.isFinite(required) && required > 0 ? ` x${required}` : "";
+  const availablePart =
+    Number.isFinite(available) && available >= 0 ? ` (have ${available})` : "";
+  return `${label ?? "Unknown"}${qtyPart}${availablePart}`;
+};
+
+const buildRingUpValidationMessage = (error) => {
+  const baseMessage =
+    typeof error?.message === "string" && error.message.trim()
+      ? error.message.trim()
+      : "Unable to ring up this order. Review tray contents and retry.";
+  const details = error?.details;
+  if (!details || typeof details !== "object") return baseMessage;
+
+  // These keys mirror backend validation buckets so the employee gets actionable fixes.
+  const missingItems = Array.isArray(details.missingItems)
+    ? details.missingItems.map(formatValidationEntry).filter(Boolean)
+    : [];
+  const insufficientQty = Array.isArray(details.insufficientQty)
+    ? details.insufficientQty.map(formatValidationEntry).filter(Boolean)
+    : [];
+  const comboInvalid = Array.isArray(details.comboInvalid)
+    ? details.comboInvalid.map(formatValidationEntry).filter(Boolean)
+    : [];
+
+  const detailMessages = [];
+  if (missingItems.length > 0) {
+    detailMessages.push(`Missing items: ${missingItems.join(", ")}`);
+  }
+  if (insufficientQty.length > 0) {
+    detailMessages.push(`Insufficient quantities: ${insufficientQty.join(", ")}`);
+  }
+  if (comboInvalid.length > 0) {
+    detailMessages.push(`Invalid combos: ${comboInvalid.join(", ")}`);
+  }
+
+  if (detailMessages.length === 0) return baseMessage;
+  return `${baseMessage} ${detailMessages.join(" | ")}`;
+};
+
+// Manager UI is test-only. In FiveM runtime we limit UI to employee/customer.
+const MANAGER_TEST_MODE = !isFiveM();
+
+const canAccessOrganizationViews = (isOrganizationMember) =>
+  isOrganizationMember || !isFiveM();
+
+const getDefaultViewForRole = (role) => {
+  if (role === "manager") return MANAGER_TEST_MODE ? "manager" : "employee";
+  if (role === "employee") return "employee";
+  return "customer";
+};
+
+const getAllowedViewsForRole = (role, hasOrgAccess) => {
+  if (!hasOrgAccess) return ["customer"];
+  if (role === "manager") {
+    return MANAGER_TEST_MODE
+      ? ["manager", "employee", "customer"]
+      : ["employee", "customer"];
+  }
+  if (role === "employee") return ["employee", "customer"];
+  return ["customer"];
+};
+
+const coerceView = (view, role, hasOrgAccess) => {
+  const allowedViews = getAllowedViewsForRole(role, hasOrgAccess);
+  // Never trust inbound `view` blindly; always clamp to role/access-allowed options.
+  return allowedViews.includes(view) ? view : allowedViews[0] ?? "customer";
+};
+
 // Single source of truth for UI + interaction state.
 // Backend may override parts of this via `syncState`.
 const createInitialState = () => ({
@@ -524,14 +642,12 @@ export function RegisterProvider({ children }) {
     ],
   );
 
-  const hasOrganizationAccess = appState.isOrganizationMember || !isFiveM();
+  const hasOrganizationAccess = canAccessOrganizationViews(appState.isOrganizationMember);
 
-  const allowedViews = useMemo(() => {
-    if (!hasOrganizationAccess) return ["customer"];
-    if (appState.currentRole === "manager") return ["manager", "employee", "customer"];
-    if (appState.currentRole === "employee") return ["employee", "customer"];
-    return ["customer"];
-  }, [appState.currentRole, hasOrganizationAccess]);
+  const allowedViews = useMemo(
+    () => getAllowedViewsForRole(appState.currentRole, hasOrganizationAccess),
+    [appState.currentRole, hasOrganizationAccess],
+  );
 
   const setStateValue = (key, value) => dispatch({ type: "SET", key, value });
   const patchState = (payload) => dispatch({ type: "PATCH", payload });
@@ -651,10 +767,13 @@ export function RegisterProvider({ children }) {
       lastPaidTotal: amount,
       lastTransactionAt: completedAt,
     }));
+    // Include full receipt payload so backend can mint a physical/paper receipt item in inventory.
     void sendNuiEvent("customerPaid", {
       storeId: activeStore?.id,
       registerId,
       total: amount,
+      receiptId: receipt.id,
+      receipt,
       ...meta,
     });
   };
@@ -897,7 +1016,9 @@ export function RegisterProvider({ children }) {
   const sendNuiEvent = async (eventName, payload) => {
     setStateValue("nuiPendingAction", eventName);
     setStateValue("nuiError", "");
-    const response = await postNui(eventName, payload);
+    const rawResponse = await postNui(eventName, payload);
+    // Convert callback-level `{ ok:false }` envelopes into regular transport failures.
+    const response = normalizeNuiCallbackResponse(rawResponse);
     if (!response.ok) {
       const code = normalizeNuiErrorCode(
         response.error?.code,
@@ -975,10 +1096,16 @@ export function RegisterProvider({ children }) {
     clearNuiError: () => setStateValue("nuiError", ""),
     // Prototype helper: simulate entering a register from a polyzone/prop in a given role.
     openInteractionAsRole: ({ role, businessId, interactionId, registerId }) => {
-      const requestedView = role === "manager" ? "manager" : role;
+      const isOrganizationMember = role === "manager" || role === "employee";
+      const requestedView = getDefaultViewForRole(role);
+      const nextView = coerceView(
+        requestedView,
+        role,
+        canAccessOrganizationViews(isOrganizationMember),
+      );
       const payload = {
         role,
-        view: requestedView,
+        view: nextView,
         storeId: appState.activeStoreId,
         registerId: registerId ?? appState.activeRegisterId,
         interaction: {
@@ -988,12 +1115,9 @@ export function RegisterProvider({ children }) {
       };
       patchState({
         uiVisible: true,
-        isOrganizationMember: role === "manager" || role === "employee",
+        isOrganizationMember,
         currentRole: role,
-        view:
-          role === "manager" || role === "employee"
-            ? requestedView
-            : "customer",
+        view: nextView,
         activeRegisterId: payload.registerId,
         interactionContext: payload.interaction,
       });
@@ -1306,7 +1430,7 @@ export function RegisterProvider({ children }) {
 
     onClearTransaction: () => {
       if (!canUseEmployeeActions) return;
-      if (session.phase === "stealMinigame" || session.isProcessing) return;
+      if (session.phase === "stealMinigame") return;
       const nextReceipts = { ...appState.receiptsByRegister };
       delete nextReceipts[appState.activeRegisterId];
       clearMinigameResultForRegister(appState.activeRegisterId);
@@ -1381,18 +1505,24 @@ export function RegisterProvider({ children }) {
         });
       }, 90);
 
-      window.setTimeout(() => {
+      window.setTimeout(async () => {
         window.clearInterval(progressIntervalId);
         const failed = Math.random() < (tier.ringUpErrorChance ?? 0);
         if (failed) {
-          setSession(registerId, (sessionState) => ({
-            ...sessionState,
-            isRungUp: false,
-            isProcessing: false,
-            processingProgress: 0,
-            processingError:
-              "Register jam detected. Re-ring this order.",
-          }));
+          let didApplyJamState = false;
+          setSession(registerId, (sessionState) => {
+            if (!sessionState.isProcessing) return sessionState;
+            didApplyJamState = true;
+            return {
+              ...sessionState,
+              isRungUp: false,
+              isProcessing: false,
+              processingProgress: 0,
+              processingError:
+                "Register jam detected. Re-ring this order.",
+            };
+          });
+          if (!didApplyJamState) return;
           void sendNuiEvent("ringUpMachineError", {
             storeId: activeStore?.id,
             registerId,
@@ -1401,20 +1531,62 @@ export function RegisterProvider({ children }) {
           return;
         }
 
-        setSession(registerId, (sessionState) => ({
-          ...sessionState,
-          isRungUp: true,
-          isProcessing: false,
-          processingProgress: 100,
-          processingError: "",
-        }));
-        void sendNuiEvent("ringUp", {
+        const sessionBeforeCommit =
+          appStateRef.current.sessionsByRegister[registerId] ?? EMPTY_SESSION;
+        // Ring-up can be canceled while processing. Abort commit if state is no longer active.
+        if (!sessionBeforeCommit.isProcessing) return;
+
+        // Commit step: backend validates inventory/combo/discount/tier rules and can override totals.
+        const ringUpResponse = await sendNuiEvent("ringUp", {
           storeId: activeStore?.id,
           registerId,
           registerTierLevel: tierLevel,
           processingMs,
           tray: nextTray,
           total: nextTray.reduce((sum, item) => sum + item.unitPrice * item.qty, 0),
+        });
+
+        const sessionAfterCommit =
+          appStateRef.current.sessionsByRegister[registerId] ?? EMPTY_SESSION;
+        // Guard against race conditions where user canceled/reset during network roundtrip.
+        if (!sessionAfterCommit.isProcessing) return;
+
+        if (!ringUpResponse.ok) {
+          const validationMessage = buildRingUpValidationMessage(ringUpResponse.error);
+          setSession(registerId, (sessionState) => {
+            if (!sessionState.isProcessing) return sessionState;
+            return {
+              ...sessionState,
+              isRungUp: false,
+              isProcessing: false,
+              processingProgress: 0,
+              processingError: validationMessage,
+            };
+          });
+          return;
+        }
+
+        const responseData = getNuiResponseData(ringUpResponse.data);
+        // Backend-authoritative tray and selected discounts win over client-side estimates.
+        const hasAuthoritativeTray = Array.isArray(responseData.tray);
+        const authoritativeTray = hasAuthoritativeTray ? responseData.tray : nextTray;
+        const authoritativeDiscountIds = Array.isArray(responseData.selectedDiscountIds)
+          ? responseData.selectedDiscountIds
+          : nextSelectedDiscountIds;
+        setSession(registerId, (sessionState) => {
+          if (!sessionState.isProcessing) return sessionState;
+          return {
+            ...sessionState,
+            isRungUp: true,
+            isProcessing: false,
+            processingProgress: 100,
+            processingError: "",
+            selectedDiscountIds: authoritativeDiscountIds,
+          };
+        });
+        setStateValue("traysByRegister", {
+          ...appStateRef.current.traysByRegister,
+          [registerId]: authoritativeTray,
         });
       }, processingMs);
     },
@@ -1981,6 +2153,11 @@ export function RegisterProvider({ children }) {
   const resolveStealMinigameRef = useRef(resolveStealMinigame);
   resolveStealMinigameRef.current = resolveStealMinigame;
 
+  const appStateRef = useRef(appState);
+  useEffect(() => {
+    appStateRef.current = appState;
+  }, [appState]);
+
   useEffect(() => {
     // Inbound message contract from FiveM client scripts.
     // Keep action names aligned with FIVEM_INTEGRATION.md.
@@ -1989,9 +2166,14 @@ export function RegisterProvider({ children }) {
       switch (message.action) {
         case "openRegister": {
           const role = payload.role ?? "employee";
-          const requestedView = payload.view ?? (role === "manager" ? "manager" : role);
           const membership = resolveOrganizationMembership(payload);
           const isOrganizationMember = membership === true;
+          const requestedView = payload.view ?? getDefaultViewForRole(role);
+          const nextView = coerceView(
+            requestedView,
+            role,
+            canAccessOrganizationViews(isOrganizationMember),
+          );
           patchState({
             uiVisible: true,
             isOrganizationMember,
@@ -2005,7 +2187,7 @@ export function RegisterProvider({ children }) {
             ...(payload.storeId ? { activeStoreId: payload.storeId } : {}),
             ...(payload.registerId ? { activeRegisterId: payload.registerId } : {}),
             interactionContext: payload.interaction ?? null,
-            view: isOrganizationMember ? requestedView : "customer",
+            view: nextView,
           });
           break;
         }
@@ -2020,9 +2202,14 @@ export function RegisterProvider({ children }) {
         case "setRole":
           {
             const membership = resolveOrganizationMembership(payload);
-            const requestedView = payload.view ?? (payload.role === "manager" ? "manager" : payload.role);
+            const role = payload.role ?? "employee";
+            const isOrganizationMember =
+              membership === null
+                ? appStateRef.current.isOrganizationMember
+                : membership === true;
+            const requestedView = payload.view ?? getDefaultViewForRole(role);
             const next = {
-              currentRole: payload.role ?? "employee",
+              currentRole: role,
               ...(membership === null ? {} : { isOrganizationMember: membership }),
               ...(Array.isArray(payload.activeEventTags)
                 ? { activeEventTags: payload.activeEventTags }
@@ -2032,14 +2219,27 @@ export function RegisterProvider({ children }) {
                 : {}),
             };
             if (payload.view) {
-              next.view = membership === true ? requestedView : "customer";
+              next.view = coerceView(
+                requestedView,
+                role,
+                canAccessOrganizationViews(isOrganizationMember),
+              );
             }
             patchState(next);
           }
           break;
         case "setView":
           if (typeof payload.view === "string") {
-            setStateValue("view", payload.view);
+            const role = payload.role ?? appStateRef.current.currentRole;
+            const hasOrgAccess = canAccessOrganizationViews(
+              appStateRef.current.isOrganizationMember,
+            );
+            const nextView = coerceView(
+              payload.view,
+              role,
+              hasOrgAccess,
+            );
+            setStateValue("view", nextView);
           }
           break;
         case "syncState": {
@@ -2068,7 +2268,18 @@ export function RegisterProvider({ children }) {
             safe.abuseSignalsByRegister = payload.abuseSignalsByRegister;
           }
           if (payload.currentRole) safe.currentRole = payload.currentRole;
-          if (payload.view) safe.view = payload.view;
+          if (payload.view) {
+            const membership = resolveOrganizationMembership(payload);
+            const isOrganizationMember =
+              membership === null
+                ? appStateRef.current.isOrganizationMember
+                : membership === true;
+            safe.view = coerceView(
+              payload.view,
+              payload.currentRole ?? appStateRef.current.currentRole,
+              canAccessOrganizationViews(isOrganizationMember),
+            );
+          }
           if (Array.isArray(payload.activeEventTags)) {
             safe.activeEventTags = payload.activeEventTags;
           }

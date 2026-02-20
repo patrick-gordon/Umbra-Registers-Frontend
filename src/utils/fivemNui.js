@@ -2,6 +2,7 @@ import {
   NUI_ERROR_CODES,
   normalizeNuiErrorCode,
 } from "../../shared/nuiErrorCodes";
+// Guard all browser-specific APIs for test/SSR safety.
 const hasWindow = typeof window !== "undefined";
 const DEFAULT_TIMEOUT_MS = 5000;
 
@@ -10,6 +11,7 @@ export const isFiveM = () =>
   hasWindow && typeof window.GetParentResourceName === "function";
 
 const isMockEnabled = () => {
+  // Mock mode is for browser dev only; real FiveM runtime should always hit the NUI bridge.
   if (!hasWindow || isFiveM()) return false;
   return String(import.meta.env?.VITE_NUI_MOCK || "false").toLowerCase() === "true";
 };
@@ -61,6 +63,8 @@ export async function postNui(eventName, payload = {}, options = {}) {
   }
 
   if (!isFiveM()) {
+    // Outside FiveM and without explicit mock bridge we no-op successfully.
+    // This keeps local UI/test flows deterministic without hard failures.
     return { ok: true, data: null, source: "browser" };
   }
 
@@ -88,6 +92,7 @@ export async function postNui(eventName, payload = {}, options = {}) {
 
     let data = null;
     try {
+      // Backend may intentionally return empty body; treat that as a valid success payload.
       data = await response.json();
     } catch {
       data = null;

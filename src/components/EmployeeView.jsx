@@ -18,6 +18,7 @@ function ProcessingIssueModal({
     : "Please review the order and try again.";
 
   useEffect(() => {
+    // Keep jam/interruption notice dismissible via keyboard like other overlays.
     const onKeyDown = (event) => {
       if (event.key !== "Escape") return;
       onDismiss();
@@ -26,17 +27,8 @@ function ProcessingIssueModal({
     return () => window.removeEventListener("keydown", onKeyDown);
   }, [onDismiss]);
 
-  const onBackdropClick = (event) => {
-    if (event.target !== event.currentTarget) return;
-    onDismiss();
-  };
-
   return (
-    <div
-      className="employee-processing-overlay"
-      role="presentation"
-      onClick={onBackdropClick}
-    >
+    <div className="employee-processing-overlay" role="presentation">
       <div
         className="employee-processing-modal"
         role="alertdialog"
@@ -142,6 +134,7 @@ function EmployeeActions({
         </div>
       )}
       {isProcessing && isTierOne && (
+        // Tier 1 has the most visible ring-up delay; show progress inline, not as a hard lock.
         <div className="employee-buffer-wrap">
           <p className="view-note">Calculating totals... {processingProgress}%</p>
           <div className="employee-buffer-track">
@@ -205,7 +198,7 @@ function EmployeeActions({
           type="button"
           className="employee-action-btn employee-action-btn--cancel"
           onClick={onClearTransaction}
-          disabled={!canClearTransaction || isProcessing}
+          disabled={!canClearTransaction}
         >
           Cancel Transaction
         </button>
@@ -342,6 +335,7 @@ function StealDefensePanel({ stealMinigame, onTap }) {
   const markerPosition = 50 + advantage * 45;
 
   useEffect(() => {
+    // Shared steal minigame keybind for employee side.
     const onKeyDown = (event) => {
       if (event.repeat) return;
       if (event.code !== "KeyE" && event.key.toLowerCase() !== "e") return;
@@ -375,15 +369,12 @@ function StealDefensePanel({ stealMinigame, onTap }) {
 export default function EmployeeView() {
   const { state, actions } = useRegisterStore();
   const isDetachedLayout = state.view === "employee";
+  // Ring-up errors are surfaced as a non-blocking notice so tray/actions remain visible.
   const showProcessingIssue =
     state.session.phase === "employee" && Boolean(state.session.processingError);
 
   return (
     <div className="view-shell view-shell--compact view-layout employee-view-shell">
-      <h2 className="view-page-title">
-        {state.activeStoreName} - {state.registerName}
-      </h2>
-
       {state.session.phase === "employee" && (
         <div className="employee-layout-stack">
           <DraggablePanel
@@ -461,6 +452,7 @@ export default function EmployeeView() {
           />
         </DraggablePanel>
       ) : (
+        // Action panel stays available in employee phase even while processing/jam messages exist.
         <DraggablePanel
           enabled={isDetachedLayout}
           panelId="employee-actions"

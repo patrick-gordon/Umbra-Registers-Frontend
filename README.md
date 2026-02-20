@@ -1,34 +1,60 @@
-# React + Vite
+# Umbra Registers Frontend
 
-This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
+React/Vite frontend for the Umbra register system used in FiveM NUI.
 
-Currently, two official plugins are available:
+## Current Checkout Flow (Implemented)
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Babel](https://babeljs.io/) (or [oxc](https://oxc.rs) when used in [rolldown-vite](https://vite.dev/guide/rolldown)) for Fast Refresh
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/) for Fast Refresh
+This project uses an intent-tray checkout flow:
 
-## React Compiler
+1. Employee builds an intent tray from the Item Picker (items/combos).
+2. Employee presses `Ring Up`.
+   - UI remains interactive while processing runs.
+3. Server validates:
+   - required item quantities from player inventory
+   - combo eligibility
+   - discount and tier effects
+4. If valid:
+   - server consumes inventory
+   - server returns authoritative tray totals (and optional selected discounts)
+   - frontend marks session as rung up
+5. If invalid:
+   - server returns `ok: false` with structured details (`missingItems`, `insufficientQty`, `comboInvalid`)
+   - frontend keeps employee in edit mode and shows the validation failure
+6. Employee adjusts tray and retries.
+7. On successful ring-up, employee enables customer actions.
 
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
+## Runtime Notes
 
-## Expanding the ESLint configuration
+- Employee UI remains usable during processing/jam notice states (non-blocking UX).
+- Manager view is test-only in browser/dev mode and not exposed in FiveM runtime.
 
-If you are developing a production application, we recommend using TypeScript with type-aware lint rules enabled. Check out the [TS template](https://github.com/vitejs/vite/tree/main/packages/create-vite/template-react-ts) for information on how to integrate TypeScript and [`typescript-eslint`](https://typescript-eslint.io) in your project.
+## Integration Docs
 
-## Backend Checklist (FiveM Integration)
+- Full FiveM contract and payload examples: `FIVEM_INTEGRATION.md`
+- Shared error code source of truth: `shared/nuiErrorCodes.js`
 
-- Send `openRegister` with `role`, `view`, `storeId`, `registerId`, and `interaction`.
-- Include org membership in `openRegister` (preferred): `isOrganizationMember: true|false`.
-- If your server already uses different keys, frontend also accepts:
-  - booleans: `isOrgMember`, `organizationMember`, `isBusinessMember`
-  - org identifiers: `organizationId`, `orgId`, `businessId`, `organization.id`
-  - same keys inside `interaction` or `interactionContext`
-- Send `setRole` updates when role changes; include membership when available.
-- Send `syncState` updates for state rehydration; include membership when available.
-- For scheduled event promotions, include `activeEventTags` (or `eventTags`) in `syncState`.
-- Optional for persistent analytics: include `registerStatsByRegister` (or `statsByRegister`) in `syncState`.
-- Optional minigame hooks: handle `stealMinigameStarted` and `stealMinigameResolved` callbacks.
-- Membership rule enforced by frontend:
-  - members can access `employee`/`manager` based on role
-  - non-members are restricted to `customer` view
-- Keep payload/action naming aligned with `FIVEM_INTEGRATION.md`.
+## Backend Checklist
+
+- Emit `openRegister` with: `role`, `view`, `storeId`, `registerId`, `interaction`.
+- Include org membership in payloads (preferred key: `isOrganizationMember`).
+- Handle `ringUp` as a commit step, not a display update:
+  - treat `tray`/`total` from UI as intent only
+  - revalidate inventory/combo/discount/tier server-side
+  - return callback response in one of these forms:
+    - success: `{ ok: true, data: { tray, selectedDiscountIds? } }`
+    - failure: `{ ok: false, error: { code, message, details? } }`
+- For validation failures, include structured details when available:
+  - `missingItems: string[] | object[]`
+  - `insufficientQty: object[]`
+  - `comboInvalid: string[] | object[]`
+- On `customerPaid`, use `receipt`/`receiptId` payload fields if you want to generate
+  a physical paper receipt item and place it into player inventory.
+- Send `syncState` for authoritative rehydration as needed.
+
+## Dev Commands
+
+- `npm install`
+- `npm run dev`
+- `npm run build`
+- `npm run lint`
+- `npm test`

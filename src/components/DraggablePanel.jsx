@@ -27,6 +27,7 @@ export default function DraggablePanel({
   panelWidth = "340px",
   children,
 }) {
+  // Store offset in viewport-space so each panel can preserve its docked position.
   const [offset, setOffset] = useState(() => clampOffsetToViewport(defaultOffset));
   const [dragging, setDragging] = useState(false);
   const [zIndex, setZIndex] = useState(() => {
@@ -46,6 +47,7 @@ export default function DraggablePanel({
   );
 
   useEffect(() => {
+    // Reset to panel defaults when layout identity changes (role/view/panel id switch).
     setOffset(clampOffsetToViewport(defaultOffset));
   }, [panelId, defaultOffset.x, defaultOffset.y]);
 
@@ -63,6 +65,7 @@ export default function DraggablePanel({
     if (event.button !== 0) return;
     if (!force) {
       const target = event.target;
+      // Allow normal interaction with inputs/buttons inside cards.
       if (target instanceof Element && target.closest(INTERACTIVE_SELECTOR)) {
         return;
       }
@@ -76,6 +79,7 @@ export default function DraggablePanel({
       startY: event.clientY,
       startOffset,
     };
+    // Bring actively dragged panel to the front without global overlay assumptions.
     globalZIndex += 1;
     setZIndex(globalZIndex);
     setDragging(true);
@@ -109,6 +113,7 @@ export default function DraggablePanel({
   const onContentPointerDown = (event) => beginDrag(event, false);
 
   if (!enabled) {
+    // In attached/non-detached layouts this acts as a no-op wrapper.
     return children;
   }
 

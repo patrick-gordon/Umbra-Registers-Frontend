@@ -14,6 +14,18 @@ The UI calls these NUI callbacks on your resource:
 - `ringUpMachineError`
 - `stealAttemptAutoBlocked`
 
+### Checkout flow (intent tray -> commit on ring-up)
+Current implemented flow:
+
+1. Employee builds an intent tray in UI (items and combos).
+2. UI sends `ringUp` with intent tray/total.
+   - UI stays interactive while processing occurs.
+3. Server validates inventory quantities, combo eligibility, discounts, and tier rules.
+4. On success, server consumes inventory and returns authoritative tray pricing/totals.
+5. On failure, server returns structured validation errors and UI stays in employee edit mode.
+6. Employee can adjust tray and retry `ringUp`.
+7. After successful ring-up, employee triggers `enableCustomerActions`.
+
 ### Correlation IDs (required for checkout/steal/tier callbacks)
 Use these IDs on every checkout/steal/tier callback for dedupe, tracing, and replay protection:
 
@@ -33,7 +45,7 @@ Apply both IDs to:
 
 Payload examples:
 
-- `ringUp`
+- `ringUp` (intent payload; server must validate/recompute)
 ```json
 {
   "uiSessionId": "ui-store-1-register-1-20260216T210000Z",
@@ -46,7 +58,7 @@ Payload examples:
 ```
 
 ### Combo/meal tray line format
-`ringUp` payload `tray` now supports both single-item and combo bundle lines.
+`ringUp` payload `tray` supports both single-item and combo bundle lines.
 
 Single item line:
 ```json
@@ -76,8 +88,55 @@ Combo bundle line:
 ```
 
 Server rule reminder:
-- Treat `unitPrice` as client display value.
-- Recompute authoritative totals from `itemIds`/catalog rules server-side.
+- Treat client `tray` and `total` as intent-only values.
+- Recompute authoritative totals from inventory/catalog/discount rules server-side.
+
+### `ringUp` callback response contract (required)
+Frontend now supports callback-level success/failure responses and applies server-authoritative results.
+
+Success:
+```json
+{
+  "ok": true,
+  "data": {
+    "tray": [
+      {
+        "id": "1",
+        "lineType": "item",
+        "itemId": "1",
+        "name": "Coffee",
+        "qty": 1,
+        "basePrice": 3.5,
+        "unitPrice": 2.25
+      }
+    ],
+    "selectedDiscountIds": ["discount-id-1"]
+  }
+}
+```
+
+Validation failure (example):
+```json
+{
+  "ok": false,
+  "error": {
+    "code": "INSUFFICIENT_STOCK",
+    "message": "Inventory validation failed.",
+    "details": {
+      "missingItems": ["Coffee Beans"],
+      "insufficientQty": [
+        { "itemId": "2", "name": "Bagel", "required": 2, "available": 1 }
+      ],
+      "comboInvalid": ["combo-breakfast"]
+    }
+  }
+}
+```
+
+Failure handling expectation:
+- Keep employee in `employee` phase/edit mode.
+- Do not mark session rung up.
+- Show validation details and allow retry.
 
 - `customerPaid`
 ```json
@@ -86,9 +145,36 @@ Server rule reminder:
   "transactionId": "txn-store-1-register-1-000182",
   "storeId": "store-1",
   "registerId": "store-1-register-1",
-  "total": 123.45
+  "total": 123.45,
+  "receiptId": "rcpt-1765000000000-ab12cd",
+  "receipt": {
+    "id": "rcpt-1765000000000-ab12cd",
+    "storeId": "store-1",
+    "storeName": "Store 1",
+    "registerId": "store-1-register-1",
+    "registerName": "Register 1",
+    "paidAt": "2026-02-16T21:10:00.000Z",
+    "items": [
+      {
+        "id": "1",
+        "name": "Coffee",
+        "lineType": "item",
+        "itemIds": [],
+        "qty": 1,
+        "unitPrice": 3.5,
+        "lineTotal": 3.5
+      }
+    ],
+    "itemCount": 1,
+    "total": 3.5,
+    "paymentMethod": "Card"
+  }
 }
 ```
+
+Physical receipt integration:
+- Use `receipt`/`receiptId` from `customerPaid` to create a paper receipt inventory item.
+- Recommended item metadata: `receiptId`, `storeId`, `registerId`, `paidAt`, `total`, `items`.
 
 - `stealMinigameStarted`
 ```json
@@ -216,9 +302,10 @@ The following client-submitted fields must be treated as hints only:
 1. Receive callback payload (`uiSessionId`, `transactionId`, action payload).
 2. Validate session, role, org membership, and idempotency.
 3. Recompute totals/discounts/stock/tier eligibility from server state.
-4. Accept or reject action with a cataloged `error.code` on failure.
-5. Persist authoritative result.
-6. Return/emit normalized state via `syncState`.
+4. Accept or reject action with a cataloged `error.code` (and `details` for validation failures).
+5. Persist authoritative result on success.
+6. Return callback result (`ok: true|false`) to the initiating action.
+7. Return/emit normalized state via `syncState` when needed.
 
 ### Rule of thumb
 - Never trust client-submitted totals, discounts, quantities, stock, or tier transitions.
@@ -483,7 +570,7 @@ Example:
 ```
 
 ### Tier ladder (L1-L7)
-1. `Starter Terminal`: slowest processing, shows buffer bar + loading modal during ring-up.
+1. `Starter Terminal`: slowest processing, shows processing progress during ring-up.
    - Highest machine error chance (re-ring required on failure).
 2. `Refit Terminal`: faster calculation pass.
 3. `Shift Pro Register`: smoother discount validation.
@@ -503,6 +590,8 @@ Use this matrix before promoting integration to production.
 ### Preflight checklist
 - Server emits and validates `uiSessionId` and `transactionId` on all checkout/steal/tier events.
 - Callback responses always return `{ ok, error? }` and include cataloged `error.code` when `ok = false`.
+- `ringUp` failures include structured validation details when available:
+  - `missingItems`, `insufficientQty`, `comboInvalid`
 - `syncState` path supports full rehydration (store, register, tray, session, tier, stats).
 - Logs include player identifier, `uiSessionId`, `transactionId`, and `error.code`.
 
@@ -518,7 +607,7 @@ Use this matrix before promoting integration to production.
 ### Tier behavior matrix
 | Test ID | Role | Membership | Tier | Scenario | Expected result |
 |---|---|---|---|---|---|
-| `TIER-01` | `employee` | true | L1 | Ring-up flow | Processing buffer/modal appears; higher machine-error behavior possible |
+| `TIER-01` | `employee` | true | L1 | Ring-up flow | Processing progress appears; higher machine-error behavior possible |
 | `TIER-02` | `employee` | true | L3 | Ring-up with eligible discounts | Auto discount assist behavior applied correctly |
 | `TIER-03` | `employee` | true | L5 | Customer steal attempt | Auto-block chance path can emit `stealAttemptAutoBlocked` once |
 | `TIER-04` | `manager` | true | L1->L2 | Upgrade register tier | Allowed only when eligibility passes; event emits with correct tier delta |

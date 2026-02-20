@@ -80,6 +80,7 @@ function StealMinigame({ stealMinigame, onTap }) {
   const markerPosition = 50 + advantage * 45;
 
   useEffect(() => {
+    // Shared steal minigame keybind for customer side.
     const onKeyDown = (event) => {
       if (event.repeat) return;
       if (event.code !== "KeyE" && event.key.toLowerCase() !== "e") return;
@@ -130,12 +131,6 @@ function CustomerReceipt({ receipt, onDismiss }) {
 
       <div className="customer-receipt-meta">
         <p>
-          <strong>Store:</strong> {receipt.storeName}
-        </p>
-        <p>
-          <strong>Register:</strong> {receipt.registerName}
-        </p>
-        <p>
           <strong>Receipt ID:</strong> {receipt.id}
         </p>
         <p>
@@ -171,6 +166,7 @@ function CustomerReceipt({ receipt, onDismiss }) {
 export default function CustomerView() {
   const { state, actions } = useRegisterStore();
   const isDetachedLayout = state.view === "customer";
+  // Only show receipt after transaction settles and tray has been cleared/reset.
   const canShowReceipt =
     Boolean(state.customerReceipt) &&
     state.session.phase !== "customer" &&
@@ -180,16 +176,13 @@ export default function CustomerView() {
 
   return (
     <div className="view-shell view-shell--compact view-layout customer-view-shell">
-      <h2 className="view-page-title">
-        {state.activeStoreName} - {state.registerName}
-      </h2>
-
       <DraggablePanel
         enabled={isDetachedLayout}
         panelId="customer-main-panel"
         panelWidth="420px"
         defaultOffset={{ x: 0, y: 0 }}
       >
+        {/* Customer phase renderer intentionally keyed off session.phase, not selected tab/view. */}
         {state.session.phase === "customer" ? (
           <CustomerActions
             tray={state.tray}
