@@ -1,0 +1,232 @@
+:root {
+  /* Spacing scale */
+  --ds-space-0: 0;
+  --ds-space-1: 0.25rem;
+  --ds-space-2: 0.5rem;
+  --ds-space-3: 0.75rem;
+  --ds-space-4: 1rem;
+  --ds-space-5: 1.5rem;
+  --ds-space-6: 2rem;
+
+  /* Radius scale */
+  --ds-radius-1: 0.375rem;
+  --ds-radius-2: 0.5rem;
+  --ds-radius-3: 0.75rem;
+  --ds-radius-4: 1rem;
+  --ds-radius-round: 999px;
+
+  /* Typography scale */
+  --ds-font-0: 0.6875rem;
+  --ds-font-1: 0.75rem;
+  --ds-font-2: 0.8125rem;
+  --ds-font-3: 0.875rem;
+  --ds-font-4: 1rem;
+  --ds-font-5: 1.125rem;
+  --ds-line-tight: 1.2;
+  --ds-line-base: 1.4;
+
+  /* Motion scale */
+  --ds-motion-fast: 120ms;
+  --ds-motion-base: 180ms;
+  --ds-motion-slow: 260ms;
+  --ds-ease-standard: cubic-bezier(0.2, 0.8, 0.24, 1);
+
+  /* Interaction hierarchy */
+  --ds-action-primary-bg: linear-gradient(115deg, #6f38ca, #8d58db);
+  --ds-action-primary-border: color-mix(in srgb, var(--umbra-primary-2) 74%, transparent 26%);
+  --ds-action-primary-text: #f7f4ff;
+  --ds-action-secondary-bg: color-mix(in srgb, var(--umbra-surface-raised) 86%, #0b111e 14%);
+  --ds-action-secondary-border: color-mix(in srgb, var(--umbra-border-soft) 62%, transparent 38%);
+  --ds-focus-ring: 0 0 0 2px rgba(141, 88, 219, 0.28);
+}
+
+body {
+  font-size: var(--ds-font-2);
+  line-height: var(--ds-line-base);
+}
+
+.card-title {
+  font-size: var(--ds-font-3);
+  line-height: var(--ds-line-tight);
+}
+
+.view-note {
+  font-size: var(--ds-font-1);
+  line-height: var(--ds-line-base);
+}
+
+button,
+.btn-secondary,
+.btn-primary {
+  border-radius: var(--ds-radius-2);
+  transition:
+    transform var(--ds-motion-fast) var(--ds-ease-standard),
+    border-color var(--ds-motion-base) var(--ds-ease-standard),
+    background var(--ds-motion-base) var(--ds-ease-standard),
+    box-shadow var(--ds-motion-base) var(--ds-ease-standard),
+    filter var(--ds-motion-base) var(--ds-ease-standard),
+    opacity var(--ds-motion-base) var(--ds-ease-standard);
+}
+
+button,
+.btn-secondary {
+  border-color: var(--ds-action-secondary-border);
+  color: var(--umbra-text);
+  background: var(--ds-action-secondary-bg);
+  box-shadow:
+    inset 0 0 0 1px rgba(255, 255, 255, 0.06),
+    0 5px 12px rgba(2, 2, 7, 0.28);
+}
+
+button:hover:not(:disabled),
+.btn-secondary:hover:not(:disabled) {
+  border-color: color-mix(in srgb, var(--umbra-border-soft) 74%, transparent 26%);
+  filter: brightness(1.06);
+}
+
+button:focus-visible,
+.btn-secondary:focus-visible,
+.btn-primary:focus-visible {
+  outline: none;
+  box-shadow: var(--ds-focus-ring);
+}
+
+button:disabled,
+.btn-secondary:disabled,
+.btn-primary:disabled,
+.is-disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+  transform: none;
+  filter: grayscale(20%);
+}
+
+.btn-primary {
+  border-color: var(--ds-action-primary-border);
+  color: var(--ds-action-primary-text);
+  background: var(--ds-action-primary-bg);
+  box-shadow:
+    inset 0 0 0 1px rgba(255, 255, 255, 0.14),
+    0 8px 16px rgba(45, 18, 88, 0.4);
+}
+
+.btn-primary:hover:not(:disabled) {
+  filter: brightness(1.08) saturate(1.04);
+}
+
+.btn-danger-muted {
+  border-color: color-mix(in srgb, var(--umbra-danger) 62%, transparent 38%);
+  color: #ffd5ce;
+  background: color-mix(in srgb, var(--umbra-danger) 28%, var(--ds-action-secondary-bg) 72%);
+}
+
+input,
+select,
+textarea {
+  border-radius: var(--ds-radius-2);
+  padding: var(--ds-space-1) var(--ds-space-2);
+  font-size: var(--ds-font-2);
+  line-height: var(--ds-line-base);
+  transition:
+    border-color var(--ds-motion-base) var(--ds-ease-standard),
+    box-shadow var(--ds-motion-base) var(--ds-ease-standard),
+    opacity var(--ds-motion-base) var(--ds-ease-standard);
+}
+
+input:focus-visible,
+select:focus-visible,
+textarea:focus-visible {
+  box-shadow: var(--ds-focus-ring);
+}
+
+input:disabled,
+select:disabled,
+textarea:disabled {
+  opacity: 0.56;
+  cursor: not-allowed;
+}
+
+.view-card,
+.mgr-card,
+.mgr-sub-card,
+.customer-checkout-block,
+.employee-breakdown-row,
+.customer-order-row,
+.customer-receipt-row {
+  border-radius: var(--ds-radius-3);
+}
+
+.ds-card-meta-row {
+  margin: 0;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--ds-space-2);
+  color: var(--umbra-text-dim);
+  font-size: var(--ds-font-1);
+}
+
+.ds-card-meta-row strong {
+  color: var(--umbra-text);
+  font-size: var(--ds-font-2);
+}
+
+.ds-card-cta {
+  width: min(220px, 100%);
+  align-self: center;
+}
+
+.ds-state-row {
+  margin: 0;
+  border: 1px solid color-mix(in srgb, var(--umbra-border-soft) 60%, transparent 40%);
+  border-radius: var(--ds-radius-2);
+  padding: var(--ds-space-2) var(--ds-space-3);
+  background: color-mix(in srgb, var(--umbra-surface-raised) 90%, #0a101a 10%);
+  font-size: var(--ds-font-1);
+}
+
+.ds-status {
+  border-radius: var(--ds-radius-round);
+}
+
+.ds-state--ready,
+.ds-status--ready {
+  border-color: color-mix(in srgb, var(--umbra-success) 62%, transparent 38%);
+  color: #b7efe5;
+  background: color-mix(in srgb, var(--umbra-success) 18%, transparent 82%);
+}
+
+.ds-state--loading,
+.ds-status--loading {
+  border-color: color-mix(in srgb, var(--umbra-primary-2) 66%, transparent 34%);
+  color: #e2d1ff;
+  background: color-mix(in srgb, var(--umbra-primary-2) 18%, transparent 82%);
+}
+
+.ds-state--empty,
+.ds-status--empty {
+  border-color: color-mix(in srgb, var(--umbra-border-soft) 58%, transparent 42%);
+  color: var(--umbra-text-dim);
+  background: color-mix(in srgb, var(--umbra-surface-raised) 86%, transparent 14%);
+}
+
+.ds-state--error,
+.ds-status--error {
+  border-color: color-mix(in srgb, var(--umbra-danger) 68%, transparent 32%);
+  color: #ffd5ce;
+  background: color-mix(in srgb, var(--umbra-danger) 20%, transparent 80%);
+}
+
+.ds-state--reconnect,
+.ds-status--reconnect {
+  border-color: color-mix(in srgb, var(--umbra-highlight) 64%, transparent 36%);
+  color: #ffe6a8;
+  background: color-mix(in srgb, var(--umbra-highlight) 18%, transparent 82%);
+}
+
+.ds-state--disabled,
+.ds-status--disabled {
+  border-color: color-mix(in srgb, var(--umbra-border-soft) 52%, transparent 48%);
+  color: color-mix(in srgb, var(--umbra-text-dim) 88%, #7d7394 12%);
+  background: color-mix(in srgb, var(--umbra-surface) 86%, transparent 14%);
+}

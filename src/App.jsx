@@ -12,6 +12,7 @@ function AppShell() {
   const showEmployeeView = state.view === "employee" && state.allowedViews.includes("employee");
   const showCustomerView = state.view === "customer" && state.allowedViews.includes("customer");
   const isDetachedView = showEmployeeView || showCustomerView;
+  const hasNuiLoading = Boolean(state.nuiPendingAction);
 
   if (!state.uiVisible) {
     return null;
@@ -24,7 +25,7 @@ function AppShell() {
       aria-modal="true"
       aria-label="Umbra Register"
     >
-      <div className={`app-shell ${isDetachedView ? "app-shell--detached" : ""}`}>
+      <div className={`app-shell ${isDetachedView ? "app-shell--detached" : ""} ${hasNuiLoading ? "is-loading" : ""}`}>
         {/* <header className="app-header">
           <h1>Umbra Register</h1>
           <p>Point-of-sale dashboard</p>
@@ -55,6 +56,15 @@ function AppShell() {
           >
             {showCustomerView && <CustomerView />}
           </div>
+          {hasNuiLoading && (
+            <div className="register-loading-overlay" role="status" aria-live="polite">
+              <div className="register-loading-modal">
+                <div className="register-loading-spinner" />
+                <h3>Syncing Register</h3>
+                <p>{state.nuiPendingAction}</p>
+              </div>
+            </div>
+          )}
         </section>
 
       </div>

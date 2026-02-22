@@ -3,15 +3,32 @@ import MinigameResultModal from "./MinigameResultModal";
 import DraggablePanel from "./DraggablePanel";
 import { useRegisterStore } from "../context/useRegisterStore";
 
-function CustomerActions({ tray, total, onPay, onSteal, canSteal }) {
+function CustomerActions({ tray, total, onPay, onSteal, canSteal, isProcessing, nuiError }) {
+  const hasReconnectIssue = /^\[(TIMEOUT|FETCH_ERROR|HTTP_ERROR)\]/.test(String(nuiError ?? ""));
+  const checkoutStatus = hasReconnectIssue
+    ? { tone: "reconnect", label: "Reconnect" }
+    : isProcessing
+      ? { tone: "loading", label: "Loading" }
+      : tray.length === 0
+        ? { tone: "empty", label: "Empty" }
+        : canSteal
+          ? { tone: "ready", label: "Ready" }
+          : { tone: "disabled", label: "Locked" };
+  const lineCount = tray.reduce((count, item) => count + (item.qty ?? 0), 0);
+
   return (
     <div className="view-card is-open">
       <div className="section-header">
         <h3 className="card-title">Customer Checkout</h3>
-        <span className="section-tag">Ready</span>
+        <span className={`section-tag ds-status ds-status--${checkoutStatus.tone}`}>
+          {checkoutStatus.label}
+        </span>
       </div>
-      <p className="view-note section-subtitle">
-        Review your order and complete payment.
+      <p className="view-note ds-card-meta-row">
+        <span>Current order</span>
+        <strong>
+          {lineCount} item(s) | ${total.toFixed(2)}
+        </strong>
       </p>
 
       <div className="customer-checkout-grid">
@@ -43,7 +60,7 @@ function CustomerActions({ tray, total, onPay, onSteal, canSteal }) {
               })}
             </div>
           ) : (
-            <p className="view-note">No items on this order yet.</p>
+            <p className="view-note ds-state-row ds-state--empty">No items on this order yet.</p>
           )}
         </div>
 
@@ -51,17 +68,17 @@ function CustomerActions({ tray, total, onPay, onSteal, canSteal }) {
           <h4>Total Due</h4>
           <p className="customer-total-amount">${total.toFixed(2)}</p>
           <div className="customer-action-row">
-            <button type="button" onClick={onPay}>
+            <button type="button" className="btn-primary customer-pay-btn ds-card-cta" onClick={onPay}>
               Pay
             </button>
-            <button type="button" onClick={onSteal} disabled={!canSteal}>
+            <button type="button" className="btn-secondary customer-steal-btn" onClick={onSteal} disabled={!canSteal}>
               {canSteal ? "Steal Food" : "Steal Attempt Used"}
             </button>
           </div>
         </div>
       </div>
       {!canSteal && (
-        <p className="view-alert">
+        <p className="view-alert ds-state-row ds-state--disabled">
           Theft was already blocked for this order.
         </p>
       )}
@@ -99,10 +116,13 @@ function StealMinigame({ stealMinigame, onTap }) {
     <div className="view-card is-open">
       <div className="section-header">
         <h3 className="card-title">Steal Minigame</h3>
-        <span className="section-tag">Mash E</span>
+        <span className="section-tag ds-status ds-status--loading">Active</span>
       </div>
+      <p className="view-note ds-card-meta-row">
+        <span>Time left</span>
+        <strong>{secondsLeft}s</strong>
+      </p>
       <p className="view-note">Press E repeatedly to pull the bar to your side.</p>
-      <p className="view-note">Time Left: {secondsLeft}s</p>
       <div className="tug-track">
         <div className="tug-track-fill" />
         <div className="tug-track-marker" style={{ left: `${markerPosition}%` }} />
@@ -110,6 +130,9 @@ function StealMinigame({ stealMinigame, onTap }) {
       <p className="view-caption">
         Left = Employee wins, Right = Customer wins
       </p>
+      <button type="button" className="btn-primary ds-card-cta" onClick={() => onTap("customer")}>
+        Tap Steal
+      </button>
     </div>
   );
 }
@@ -123,20 +146,12 @@ function CustomerReceipt({ receipt, onDismiss }) {
     <div className="view-card is-open customer-receipt-card">
       <div className="section-header">
         <h3 className="card-title">Payment Complete</h3>
-        <span className="section-tag is-good">Receipt</span>
+        <span className="section-tag ds-status ds-status--ready">Receipt</span>
       </div>
-      <p className="view-note section-subtitle">
-        Thanks for your order. Keep this digital receipt for your records.
+      <p className="view-note ds-card-meta-row">
+        <span>Receipt #{receipt.id}</span>
+        <strong>{paidAtLabel}</strong>
       </p>
-
-      <div className="customer-receipt-meta">
-        <p>
-          <strong>Receipt ID:</strong> {receipt.id}
-        </p>
-        <p>
-          <strong>Paid At:</strong> {paidAtLabel}
-        </p>
-      </div>
 
       <div className="customer-receipt-list">
         {receipt.items.map((item) => (
@@ -155,7 +170,7 @@ function CustomerReceipt({ receipt, onDismiss }) {
       </div>
 
       <div className="customer-action-row">
-        <button type="button" onClick={onDismiss}>
+        <button type="button" className="btn-primary ds-card-cta" onClick={onDismiss}>
           Done
         </button>
       </div>
@@ -190,6 +205,8 @@ export default function CustomerView() {
             onPay={actions.onCustomerPay}
             onSteal={actions.onCustomerSteal}
             canSteal={state.session.stealMinigame?.winner !== "employee"}
+            isProcessing={state.session.isProcessing}
+            nuiError={state.nuiError}
           />
         ) : state.session.phase === "stealMinigame" ? (
           <StealMinigame
@@ -208,6 +225,7 @@ export default function CustomerView() {
             </div>
             <div>
               <h3 className="card-title">Welcome to {state.activeStoreName}</h3>
+              <p className="section-tag ds-status ds-status--empty">Empty</p>
               <p className="view-note view-note--compact">
                 Your order appears here once an employee starts the transaction.
               </p>

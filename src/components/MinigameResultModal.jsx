@@ -40,7 +40,9 @@ export default function MinigameResultModal({ result, onDismiss }) {
       >
         <div className="minigame-result-modal-head">
           <h3 className="card-title">Food War Result</h3>
-          <span className={`section-tag ${isEmployeeWinner ? "is-good" : "is-danger"}`}>
+          <span
+            className={`section-tag ds-status ${isEmployeeWinner ? "ds-status--ready" : "ds-status--error"}`}
+          >
             {winnerLabel} Victory
           </span>
         </div>
@@ -60,7 +62,7 @@ export default function MinigameResultModal({ result, onDismiss }) {
             <strong>{customerScore}</strong>
           </div>
         </div>
-        <button type="button" onClick={onDismiss} className="minigame-result-dismiss">
+        <button type="button" onClick={onDismiss} className="minigame-result-dismiss btn-primary">
           Continue
         </button>
       </div>

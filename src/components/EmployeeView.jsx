@@ -51,13 +51,13 @@ function ProcessingIssueModal({
         <div className="employee-processing-modal-actions">
           <button
             type="button"
-            className="employee-processing-retry"
+            className="employee-processing-retry btn-primary"
             onClick={onRetry}
             disabled={!canRetry || isRetrying}
           >
             Retry Ring Up
           </button>
-          <button type="button" onClick={onDismiss}>
+          <button type="button" onClick={onDismiss} className="btn-secondary">
             Close
           </button>
         </div>
@@ -80,8 +80,24 @@ function EmployeeActions({
   isProcessing,
   processingProgress,
   activeRegisterTier,
+  trayCount,
+  total,
+  processingError,
+  nuiError,
 }) {
   const isTierOne = activeRegisterTier?.level === 1;
+  const hasReconnectIssue = /^\[(TIMEOUT|FETCH_ERROR|HTTP_ERROR)\]/.test(String(nuiError ?? ""));
+  const actionStatus = hasReconnectIssue
+    ? { tone: "reconnect", label: "Reconnect" }
+    : processingError
+      ? { tone: "error", label: "Error" }
+      : isProcessing
+        ? { tone: "loading", label: "Loading" }
+        : !hasTrayItems
+          ? { tone: "empty", label: "Empty" }
+          : canConfirm
+            ? { tone: "ready", label: "Ready" }
+            : { tone: "disabled", label: "Waiting" };
   const perks = [];
   if (activeRegisterTier?.autoDiscountAssist) perks.push("Auto Discount Assist");
   if ((activeRegisterTier?.employeeDefenseBonus ?? 0) > 0) {
@@ -118,14 +134,19 @@ function EmployeeActions({
     <div className="view-card is-open employee-actions-card">
       <div className="section-header">
         <h3 className="card-title">Employee Actions</h3>
-        <span className="section-tag employee-actions-tag">Checkout Flow</span>
+        <span className={`section-tag ds-status ds-status--${actionStatus.tone}`}>
+          {actionStatus.label}
+        </span>
       </div>
-      <p className="view-note view-note--compact">
-        Register: L{activeRegisterTier?.level ?? 1} {activeRegisterTier?.name}
+      <p className="view-note ds-card-meta-row">
+        <span>
+          Tier L{activeRegisterTier?.level ?? 1} {activeRegisterTier?.name}
+        </span>
+        <strong>
+          {trayCount} item(s) | ${total.toFixed(2)}
+        </strong>
       </p>
-      <p className="view-note section-subtitle">
-        Build tray, apply discounts, ring up, then enable customer actions.
-      </p>
+      {processingError && <p className="ds-state-row ds-state--error">{processingError}</p>}
       {perks.length > 0 && (
         <div className="employee-perk-row">
           {perks.map((perk) => (
@@ -147,7 +168,9 @@ function EmployeeActions({
       )}
       <div className="employee-discount-list employee-actions-discounts">
         {availableSessionDiscounts.length === 0 && (
-          <span className="view-note employee-actions-empty">No available discounts.</span>
+          <span className="view-note employee-actions-empty ds-state-row ds-state--empty">
+            No available discounts.
+          </span>
         )}
         {availableSessionDiscounts.map((discount) => {
           const isSelected = selectedDiscountIds.includes(discount.id);
@@ -180,7 +203,7 @@ function EmployeeActions({
       <div className="employee-action-row employee-action-row--compact">
         <button
           type="button"
-          className="employee-action-btn employee-action-btn--ring"
+          className="employee-action-btn employee-action-btn--ring btn-primary ds-card-cta"
           onClick={onRingUp}
           disabled={!hasTrayItems || isProcessing || canConfirm}
         >
@@ -188,7 +211,7 @@ function EmployeeActions({
         </button>
         <button
           type="button"
-          className="employee-action-btn employee-action-btn--confirm"
+          className="employee-action-btn employee-action-btn--confirm btn-secondary"
           onClick={onConfirm}
           disabled={!canConfirm || isProcessing}
         >
@@ -196,7 +219,7 @@ function EmployeeActions({
         </button>
         <button
           type="button"
-          className="employee-action-btn employee-action-btn--cancel"
+          className="employee-action-btn employee-action-btn--cancel btn-danger-muted"
           onClick={onClearTransaction}
           disabled={!canClearTransaction}
         >
@@ -212,20 +235,23 @@ function ComboBuilder({ combos, onAddCombo }) {
     <div className="view-card employee-combo-card">
       <div className="section-header">
         <h3 className="card-title">Meal Combos</h3>
-        <span className="section-tag">Bundle Pricing</span>
+        <span className={`section-tag ds-status ${combos.length > 0 ? "ds-status--ready" : "ds-status--empty"}`}>
+          {combos.length > 0 ? "Ready" : "Empty"}
+        </span>
       </div>
-      <p className="view-note section-subtitle">
-        Add prebuilt meals with automatic bundle pricing.
+      <p className="view-note ds-card-meta-row">
+        <span>Bundle pricing</span>
+        <strong>{combos.length} combo(s)</strong>
       </p>
       {combos.length === 0 ? (
-        <p className="view-note view-note--compact">No combos configured.</p>
+        <p className="view-note view-note--compact ds-state-row ds-state--empty">No combos configured.</p>
       ) : (
         <div className="employee-combo-list">
           {combos.map((combo) => (
             <button
               key={combo.id}
               type="button"
-              className="employee-item-chip employee-combo-chip"
+              className="employee-item-chip employee-combo-chip btn-secondary"
               onClick={() => onAddCombo(combo.id)}
               title={combo.itemNames.join(" + ")}
             >
@@ -249,12 +275,16 @@ function OrderBreakdown({ tray, total, onIncrease, onDecrease, onRemove, isRungU
     <div className="view-card is-open employee-card-compact">
       <div className="section-header">
         <h3 className="card-title">Order Breakdown</h3>
-        <span className={`section-tag ${isRungUp ? "is-good" : ""}`}>
+        <span className={`section-tag ds-status ${isRungUp ? "ds-status--ready" : "ds-status--disabled"}`}>
           {isRungUp ? "Rung Up" : "Pending"}
         </span>
       </div>
+      <p className="view-note ds-card-meta-row">
+        <span>Line items</span>
+        <strong>{tray.length}</strong>
+      </p>
       {tray.length === 0 ? (
-        <p className="view-note view-note--compact">
+        <p className="view-note view-note--compact ds-state-row ds-state--empty">
           No items added yet.
         </p>
       ) : (
@@ -279,7 +309,7 @@ function OrderBreakdown({ tray, total, onIncrease, onDecrease, onRemove, isRungU
                     <span className="employee-line-unit">${unitPrice.toFixed(2)} each</span>
                     {hasAppliedDiscount && (
                       <span className="employee-line-discount">
-                        Was ${baseUnitPrice.toFixed(2)}
+                        Discounted ${baseUnitPrice.toFixed(2)}{" -> "}${unitPrice.toFixed(2)} each
                       </span>
                     )}
                   </div>
@@ -291,7 +321,7 @@ function OrderBreakdown({ tray, total, onIncrease, onDecrease, onRemove, isRungU
                   <div className="employee-line-controls">
                     <button
                       type="button"
-                      className="employee-qty-btn"
+                      className="employee-qty-btn btn-secondary"
                       onClick={() => onDecrease(item.id)}
                       aria-label={`Decrease ${item.name}`}
                     >
@@ -300,13 +330,13 @@ function OrderBreakdown({ tray, total, onIncrease, onDecrease, onRemove, isRungU
                     <span className="employee-qty-value">{item.qty}</span>
                     <button
                       type="button"
-                      className="employee-qty-btn"
+                      className="employee-qty-btn btn-secondary"
                       onClick={() => onIncrease(item.id)}
                       aria-label={`Increase ${item.name}`}
                     >
                       +
                     </button>
-                    <button type="button" className="employee-remove-btn" onClick={() => onRemove(item.id)}>
+                    <button type="button" className="employee-remove-btn btn-secondary" onClick={() => onRemove(item.id)}>
                       Remove
                     </button>
                   </div>
@@ -354,14 +384,20 @@ function StealDefensePanel({ stealMinigame, onTap }) {
     <div className="view-card is-open">
       <div className="section-header">
         <h3 className="card-title">Theft Defense</h3>
-        <span className="section-tag">Mash E</span>
+        <span className="section-tag ds-status ds-status--loading">Active</span>
       </div>
+      <p className="view-note ds-card-meta-row">
+        <span>Time left</span>
+        <strong>{secondsLeft}s</strong>
+      </p>
       <p className="view-note">Press E repeatedly to block theft.</p>
-      <p className="view-note">Time Left: {secondsLeft}s</p>
       <div className="tug-track">
         <div className="tug-track-fill" />
         <div className="tug-track-marker" style={{ left: `${markerPosition}%` }} />
       </div>
+      <button type="button" className="btn-primary ds-card-cta" onClick={() => onTap("employee")}>
+        Tap Defense
+      </button>
     </div>
   );
 }
@@ -386,17 +422,25 @@ export default function EmployeeView() {
             <div className="view-card is-open employee-card-compact">
               <div className="section-header">
                 <h3 className="card-title">Item Picker</h3>
-                <span className="section-tag">Menu</span>
+                <span
+                  className={`section-tag ds-status ${state.customerItems.length > 0 ? "ds-status--ready" : "ds-status--empty"}`}
+                >
+                  {state.customerItems.length > 0 ? "Ready" : "Empty"}
+                </span>
               </div>
+              <p className="view-note ds-card-meta-row">
+                <span>Menu items</span>
+                <strong>{state.customerItems.length}</strong>
+              </p>
               <p className="view-note section-subtitle">
-                Select menu items to build the tray before ringing up.
+                Select items to build the tray.
               </p>
               <div className="employee-item-picker">
                 {state.customerItems.map((item) => {
                   return (
                     <button
                       key={item.id}
-                      className="employee-item-chip"
+                      className="employee-item-chip btn-secondary"
                       type="button"
                       onClick={() => actions.onAddToTray(item.id)}
                     >
@@ -474,6 +518,10 @@ export default function EmployeeView() {
               state.session.selectedDiscountIds.length > 0 ||
               state.session.phase !== "employee"
             }
+            trayCount={state.tray.reduce((count, item) => count + (item.qty ?? 0), 0)}
+            total={state.total}
+            processingError={state.session.processingError}
+            nuiError={state.nuiError}
             isProcessing={state.session.isProcessing}
             processingProgress={state.session.processingProgress}
             activeRegisterTier={state.activeRegisterTier}

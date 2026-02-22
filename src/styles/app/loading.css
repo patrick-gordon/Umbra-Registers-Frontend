@@ -1,0 +1,58 @@
+.register-loading-overlay {
+  position: absolute;
+  inset: 0;
+  z-index: 30;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: radial-gradient(circle at 50% 35%, rgba(117, 58, 206, 0.22), rgba(10, 8, 16, 0.84));
+}
+
+.register-loading-modal {
+  width: min(380px, 92%);
+  border: 1px solid color-mix(in srgb, var(--umbra-border-soft) 72%, transparent 28%);
+  border-radius: 12px;
+  background: linear-gradient(180deg, rgba(32, 22, 52, 0.96), rgba(15, 10, 26, 0.97));
+  box-shadow: 0 22px 42px rgba(0, 8, 22, 0.56);
+  padding: 0.8rem;
+  text-align: center;
+}
+
+.register-loading-modal h3 {
+  margin: 0.14rem 0 0.14rem;
+  font-size: 0.9rem;
+}
+
+.register-loading-modal p {
+  margin: 0;
+  color: var(--umbra-text-muted);
+  font-size: 0.74rem;
+}
+
+.register-loading-spinner {
+  width: 36px;
+  height: 36px;
+  margin: 0 auto 0.34rem;
+  border-radius: 999px;
+  border: 3px solid rgba(255, 255, 255, 0.12);
+  border-top-color: var(--umbra-highlight);
+  border-right-color: var(--umbra-primary-2);
+  animation: registerSpin 0.85s linear infinite;
+}
+
+.register-loading-bar {
+  margin-top: 0.5rem;
+  height: 10px;
+  border-radius: 999px;
+  overflow: hidden;
+  border: 1px solid color-mix(in srgb, var(--umbra-border-soft) 64%, transparent 36%);
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.register-loading-bar-fill {
+  height: 100%;
+  width: 0%;
+  background: linear-gradient(90deg, #1d8686, #753ace, #ea501f);
+  transition: width 0.1s linear;
+}
+
