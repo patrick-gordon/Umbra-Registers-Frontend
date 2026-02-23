@@ -1,5 +1,30 @@
 # FiveM NUI Integration
 
+## Backend Workflow (Current Implementation)
+
+1. Player interacts with a register zone/prop.
+2. Resource sends `SendNUIMessage({ action = "openRegister", payload = ... })`.
+3. UI opens and runs locally while employee builds/modifies tray.
+4. Employee presses `Ring Up`:
+   - UI may emit `ringUpMachineError` first (client-side jam simulation on low tiers).
+   - UI emits `ringUp` with intent tray/total.
+   - Backend validates inventory, discounts, combos, and pricing.
+   - Backend returns callback result (`ok: true|false`).
+5. On successful `ringUp`, employee presses `Enable Customer Actions` and UI emits `enableCustomerActions`.
+6. Customer completes one terminal outcome:
+   - Paid path: `customerPaid`
+   - Theft path:
+     - immediate block: `stealAttemptAutoBlocked`
+     - minigame path: `stealMinigameStarted` then either:
+       - customer wins: `customerStole` (includes minigame metadata)
+       - employee wins: `stealMinigameResolved`
+7. Backend may rehydrate/override UI state at any time via `syncState`.
+8. Resource can close UI with `closeRegister`, or UI can emit `close`.
+
+### Current field support note
+- Extra fields are ignored safely unless explicitly handled by the frontend state reducer.
+- `uiSessionId`, `transactionId`, and `schemaVersion` are currently backend-managed conventions (recommended for logging/idempotency), but they are not required for core UI behavior.
+
 ## Browser -> FiveM callbacks (POST)
 The UI calls these NUI callbacks on your resource:
 
@@ -14,6 +39,23 @@ The UI calls these NUI callbacks on your resource:
 - `ringUpMachineError`
 - `stealAttemptAutoBlocked`
 
+### Payloads emitted by frontend (current)
+Use this as the implementation map for backend handlers.
+
+| Callback | Trigger in UI | Payload keys |
+|---|---|---|
+| `close` | User closes panel / presses ESC | none |
+| `ringUp` | Employee presses `Ring Up` and client processing phase completes | `storeId`, `registerId`, `registerTierLevel`, `processingMs`, `tray`, `total` |
+| `enableCustomerActions` | Employee confirms customer phase | `storeId`, `registerId` |
+| `customerPaid` | Customer pays | `storeId`, `registerId`, `total`, `receiptId`, `receipt` |
+| `customerStole` | Customer theft finalizes | `storeId`, `registerId`, optional `minigame` |
+| `stealMinigameStarted` | Theft minigame begins | `storeId`, `registerId`, `durationMs`, `employeeDefenseBonus`, `registerTierLevel` |
+| `stealMinigameResolved` | Minigame ends with employee defense win | `storeId`, `registerId`, `winner`, `customerScore`, `employeeScore` |
+| `registerTierUpgraded` | Manager upgrades tier from UI | `storeId`, `registerId`, `previousTierLevel`, `nextTierLevel` |
+| `ringUpMachineError` | Client-side ring-up jam simulation fails attempt | `storeId`, `registerId`, `registerTierLevel` |
+| `stealAttemptAutoBlocked` | Tier auto-block chance triggers before minigame | `storeId`, `registerId`, `registerTierLevel`, `instantBlockChance` |
+| `openRegister` | Prototype-only helper (`openInteractionAsRole`) | `role`, `view`, `storeId`, `registerId`, `interaction` |
+
 ### Checkout flow (intent tray -> commit on ring-up)
 Current implemented flow:
 
@@ -26,13 +68,13 @@ Current implemented flow:
 6. Employee can adjust tray and retry `ringUp`.
 7. After successful ring-up, employee triggers `enableCustomerActions`.
 
-### Correlation IDs (required for checkout/steal/tier callbacks)
-Use these IDs on every checkout/steal/tier callback for dedupe, tracing, and replay protection:
+### Correlation IDs (recommended backend extension)
+For production hardening, use these IDs in your backend for dedupe/tracing/replay protection:
 
 - `uiSessionId`: unique for each register UI open/close lifecycle.
 - `transactionId`: unique for each checkout attempt lifecycle (ring-up through final resolution).
 
-Apply both IDs to:
+Recommended callback coverage:
 - `ringUp`
 - `enableCustomerActions`
 - `customerPaid`
@@ -42,6 +84,10 @@ Apply both IDs to:
 - `ringUpMachineError`
 - `stealAttemptAutoBlocked`
 - `registerTierUpgraded`
+
+Implementation note:
+- Frontend core flow works without these IDs.
+- If you enforce them server-side, generate/attach and validate them in your backend pipeline consistently.
 
 Payload examples:
 
@@ -299,7 +345,7 @@ The following client-submitted fields must be treated as hints only:
 - tier upgrade intent
 
 ### Required backend decision flow
-1. Receive callback payload (`uiSessionId`, `transactionId`, action payload).
+1. Receive callback payload (action payload, plus optional `uiSessionId`/`transactionId` if you implement correlation IDs).
 2. Validate session, role, org membership, and idempotency.
 3. Recompute totals/discounts/stock/tier eligibility from server state.
 4. Accept or reject action with a cataloged `error.code` (and `details` for validation failures).
@@ -351,13 +397,13 @@ Suggested response shape:
 To avoid breaking older resources, version your contract explicitly.
 
 ### Policy
-- Add `schemaVersion` to every outbound callback and inbound message payload.
+- Add `schemaVersion` to payloads as a backend convention when you need strict contract rollout control.
 - Only add fields in minor updates; never repurpose existing keys.
 - Keep deprecated keys supported for at least 2 release cycles.
 - Log a warning when deprecated keys are used, then remove on major version bump.
 
 ### Current baseline
-- `schemaVersion: 1` (current stable contract).
+- `schemaVersion: 1` (recommended baseline for backend-managed contracts).
 
 ### Deprecation workflow
 1. Introduce new key alongside old key.
@@ -459,19 +505,24 @@ window.__NUI_MOCK__ = {
 ```
 
 `syncState` can patch:
-- `schemaVersion`
-- `uiSessionId`
 - `activeEventTags` (or `eventTags`)
 - `stores`
 - `activeStoreId`
 - `activeRegisterId`
 - `traysByRegister`
 - `sessionsByRegister`
+- `receiptsByRegister`
+- `minigameResultsByRegister`
 - `registerTierByRegister` (or `registerLevelsByRegister`)
 - `registerStatsByRegister` (or `statsByRegister`)
 - `abuseSignalsByRegister`
 - `currentRole`
 - `view`
+- membership keys accepted by `resolveOrganizationMembership`:
+  - `isOrganizationMember`, `isOrgMember`, `organizationMember`, `isBusinessMember`
+  - `organizationId`, `orgId`, `businessId`, `organization.id`
+  - same keys under `interaction`/`interactionContext`
+- `interactionContext`
 
 ### Scheduled promotions payload shape
 Manager-configured discounts/promotions may include optional schedule fields:
@@ -588,12 +639,12 @@ Example:
 Use this matrix before promoting integration to production.
 
 ### Preflight checklist
-- Server emits and validates `uiSessionId` and `transactionId` on all checkout/steal/tier events.
+- If using correlation IDs, emit and validate `uiSessionId` and `transactionId` on checkout/steal/tier events.
 - Callback responses always return `{ ok, error? }` and include cataloged `error.code` when `ok = false`.
 - `ringUp` failures include structured validation details when available:
   - `missingItems`, `insufficientQty`, `comboInvalid`
 - `syncState` path supports full rehydration (store, register, tray, session, tier, stats).
-- Logs include player identifier, `uiSessionId`, `transactionId`, and `error.code`.
+- Logs include player identifier and `error.code` (plus `uiSessionId`/`transactionId` if implemented).
 
 ### Role and membership access matrix
 | Test ID | Role | Membership | Tier | Scenario | Expected result |
@@ -624,7 +675,7 @@ Use this matrix before promoting integration to production.
 
 ### Reliability and abuse checklist
 - Open/close UI rapidly 10+ times:
-  - each open gets a unique `uiSessionId`
+  - if correlation IDs are enabled, each open gets a unique `uiSessionId`
   - stale IDs are rejected
 - Replay identical callback payloads:
   - finalization callbacks are deduped by idempotency key

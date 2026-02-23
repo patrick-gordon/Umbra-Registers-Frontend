@@ -79,12 +79,11 @@
   pointer-events: none;
   z-index: 0;
   background:
-    radial-gradient(circle at 50% 100%, rgba(117, 58, 206, 0.2), transparent 52%),
-    linear-gradient(
-      0deg,
-      rgba(7, 6, 15, 0.76) 0%,
-      rgba(7, 6, 15, 0.46) 24%,
-      rgba(7, 6, 15, 0) 60%
+    radial-gradient(
+      circle at 50% 100%,
+      rgba(117, 58, 206, 0.17) 0%,
+      rgba(117, 58, 206, 0.08) 26%,
+      rgba(117, 58, 206, 0) 62%
     );
 }
 
@@ -214,7 +213,9 @@
   position: relative;
   isolation: isolate;
   border-radius: 999px;
+  border: 1px solid rgba(141, 99, 207, 0.64);
   border: 1px solid color-mix(in srgb, var(--umbra-border-soft) 62%, transparent 38%);
+  background: rgba(35, 24, 53, 0.94);
   background: color-mix(in srgb, var(--umbra-surface-raised) 90%, #170f29 10%);
   opacity: 0.86;
   cursor: grab;
@@ -246,6 +247,7 @@
 
 .app-shell--detached .draggable-panel-handle:focus-visible {
   outline: none;
+  border-color: rgba(248, 210, 71, 0.44);
   border-color: color-mix(in srgb, var(--umbra-highlight) 60%, var(--umbra-border-soft) 40%);
 }
 
@@ -254,6 +256,7 @@
   animation: none;
   opacity: 1;
   transform: translateY(0);
+  background: rgba(84, 52, 139, 0.95);
   background: color-mix(in srgb, var(--umbra-highlight) 28%, var(--umbra-surface-raised) 72%);
   box-shadow:
     0 0 0 1px rgba(248, 210, 71, 0.2),
@@ -289,6 +292,7 @@
   width: 4px;
   height: 4px;
   border-radius: 999px;
+  background: rgba(241, 218, 144, 0.92);
   background: color-mix(in srgb, var(--umbra-highlight) 56%, #fff 44%);
 }
 
